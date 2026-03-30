@@ -1,0 +1,173 @@
+/* =======================================================================
+   HID Shield – Global Cyberpunk Stylesheet
+   ======================================================================= */
+
+/* --- Global Reset --------------------------------------------------- */
+* {
+    font-family: {{FONT_FAMILY}};
+    font-size: 14px;
+    color: {{TEXT_PRIMARY}};
+    outline: none;
+}
+
+QMainWindow {
+    background-color: {{BG_PRIMARY}};
+}
+
+QWidget {
+    background-color: transparent;
+}
+
+/* --- Typography ----------------------------------------------------- */
+
+QLabel {
+    color: {{TEXT_PRIMARY}};
+}
+
+QLabel.h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: {{TEXT_PRIMARY}};
+    letter-spacing: 1px;
+}
+
+QLabel.h2 {
+    font-size: 18px;
+    font-weight: 600;
+    color: {{ACCENT_CYAN}};
+}
+
+QLabel.subtitle {
+    font-size: 13px;
+    color: {{TEXT_SECONDARY}};
+}
+
+QLabel.accent-green { color: {{ACCENT_GREEN}}; }
+QLabel.accent-cyan { color: {{ACCENT_CYAN}}; }
+QLabel.accent-magenta { color: {{ACCENT_MAGENTA}}; }
+QLabel.accent-amber { color: {{ACCENT_AMBER}}; }
+
+/* --- Top Bar & Layout Containers ------------------------------------ */
+
+QFrame#topBar {
+    background-color: {{BG_PRIMARY}};
+    border-bottom: 1px solid {{BORDER}};
+}
+
+QFrame#sideBar {
+    background-color: {{BG_SECONDARY}};
+    border-right: 1px solid {{BORDER}};
+}
+
+/* --- Buttons (Standard) --------------------------------------------- */
+
+QPushButton {
+    background-color: {{BG_TERTIARY}};
+    color: {{TEXT_PRIMARY}};
+    border: 1px solid {{BORDER}};
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-weight: 600;
+}
+
+QPushButton:hover {
+    background-color: {{BORDER}};
+    border: 1px solid {{ACCENT_CYAN}};
+    color: {{ACCENT_CYAN}};
+}
+
+QPushButton:pressed {
+    background-color: {{BG_PRIMARY}};
+}
+
+QPushButton:disabled {
+    background-color: {{BG_SECONDARY}};
+    color: {{TEXT_DISABLED}};
+    border: 1px solid {{BG_SECONDARY}};
+}
+
+/* --- Sidebar Navigation Buttons ------------------------------------- */
+
+QPushButton.nav-button {
+    background-color: transparent;
+    border: none;
+    border-radius: 8px;
+    text-align: left;
+    padding: 12px 16px;
+    color: {{TEXT_SECONDARY}};
+    font-size: 15px;
+    font-weight: 500;
+}
+
+QPushButton.nav-button:hover {
+    background-color: {{BG_TERTIARY}};
+    color: {{TEXT_PRIMARY}};
+}
+
+QPushButton.nav-button:checked {
+    background-color: rgba(0, 212, 255, 0.1);
+    color: {{ACCENT_CYAN}};
+    border-left: 3px solid {{ACCENT_CYAN}};
+    border-radius: 0px; /* Flush left */
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+/* --- Danger / Action Buttons ----------------------------------------- */
+
+QPushButton.btn-danger {
+    background-color: transparent;
+    border: 1px solid {{ACCENT_MAGENTA}};
+    color: {{ACCENT_MAGENTA}};
+}
+
+QPushButton.btn-danger:hover {
+    background-color: {{ACCENT_MAGENTA}};
+    color: #ffffff;
+}
+
+QPushButton.btn-primary {
+    background-color: transparent;
+    border: 1px solid {{ACCENT_CYAN}};
+    color: {{ACCENT_CYAN}};
+}
+
+QPushButton.btn-primary:hover {
+    background-color: {{ACCENT_CYAN}};
+    color: {{BG_PRIMARY}};
+}
+
+/* --- Scrollbars (Thin, dark) ---------------------------------------- */
+
+QScrollBar:vertical {
+    background: {{BG_PRIMARY}};
+    width: 10px;
+    margin: 0px 0px 0px 0px;
+    border-left: 1px solid {{BORDER}};
+}
+
+QScrollBar::handle:vertical {
+    background: {{BORDER_LIGHT}};
+    min-height: 30px;
+    border-radius: 5px;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: {{ACCENT_CYAN}};
+}
+
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0px;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+/* --- QToast / Temporary notifications ------------------------------- */
+
+QFrame#toastFrame {
+    background-color: {{BG_TERTIARY}};
+    border: 1px solid {{ACCENT_CYAN}};
+    border-radius: 8px;
+}

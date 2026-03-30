@@ -1,0 +1,29 @@
+# =============================================================================
+# HID Shield – Intelligent USB Security System
+# Core Dependencies (pinned for reproducibility)
+# =============================================================================
+
+# --- GUI Framework ---
+PySide6==6.8.3                   # Qt6 bindings for Python (LTS-compatible)
+
+# --- Database & ORM ---
+SQLAlchemy==2.0.36               # Async-ready ORM / Core
+alembic==1.14.1                  # Database schema migrations
+
+# --- Configuration & Secrets ---
+pydantic==2.10.5                 # Data validation (used by pydantic-settings)
+pydantic-settings==2.7.1         # .env / YAML settings management
+PyYAML==6.0.2                    # YAML config file parsing
+python-dotenv==1.0.1             # .env file loading
+
+# --- Security & Cryptography ---
+cryptography==44.0.0             # AES-256, hashing, key derivation
+bcrypt==4.2.1                    # Secure PIN/password hashing
+pefile==2024.8.26                # PE header parsing for executable analysis
+
+# --- Packaging & Distribution ---
+pyinstaller==6.12.0              # Single-file executable builder
+
+# --- Utilities ---
+loguru==0.7.3                    # Structured, colourful logging
+reportlab==4.2.5                 # PDF report generation

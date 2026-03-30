@@ -1,0 +1,75 @@
+# =============================================================================
+# HID Shield – Intelligent USB Security System
+# Project configuration (PEP 621 / PEP 517)
+# =============================================================================
+
+[project]
+name = "hid-shield"
+version = "1.0.0"
+description = "Intelligent USB Security System – monitor, analyse, and control HID devices."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [
+    { name = "HID Shield Team" },
+]
+keywords = ["usb", "hid", "security", "desktop", "pyside6"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Security",
+    "Framework :: Qt",
+]
+
+# Dynamic dependencies are read from requirements.txt at build time
+dynamic = ["dependencies"]
+
+[project.scripts]
+hid-shield = "main:main"
+
+# ---------------------------------------------------------------------------
+# Build system
+# ---------------------------------------------------------------------------
+[build-system]
+requires = ["setuptools>=69.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+# ---------------------------------------------------------------------------
+# PyInstaller configuration (used by `pyinstaller` CLI or spec file)
+# ---------------------------------------------------------------------------
+[tool.pyinstaller]
+# These values are referenced by the .spec file / build script
+app_name = "HIDShield"
+one_file = true
+windowed = true
+icon = "assets/icon.ico"
+add_data = [
+    "config.yaml:.",
+    "assets:assets",
+]
+hidden_imports = [
+    "PySide6.QtCore",
+    "PySide6.QtGui",
+    "PySide6.QtWidgets",
+    "sqlalchemy.dialects.sqlite",
+]
+
+# ---------------------------------------------------------------------------
+# Linting / formatting (optional, for dev convenience)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
