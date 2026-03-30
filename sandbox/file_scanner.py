@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import mimetypes
 import os
-import random
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -81,15 +80,17 @@ class FileScanner(QObject):
         session_id = session.session_id
 
         try:
-            file_count = random.randint(8, 15) if self._simulation_mode else 0
-            files = self._sandbox_manager.create_mock_files(session_id, file_count)
+            files = self._sandbox_manager.shadow_copy_from_device(
+                session_id=session_id,
+                device_payload=device_dict,
+            )
 
             if not files:
                 summary = {
                     "device": device_dict,
                     "files": [],
                     "risk_level": RiskLevel.SAFE.value,
-                    "message": "No files available for scanning.",
+                    "message": "No readable files found on the connected USB volume.",
                 }
                 self._finalize_scan(event_id, summary, RiskLevel.SAFE.value, PolicyAction.MONITOR.value)
                 return
@@ -114,10 +115,6 @@ class FileScanner(QObject):
                             "threat_name": row.get("threat_name"),
                         }
                     )
-
-                # Introduce slight delay in simulation to visualize progress streaming.
-                if self._simulation_mode:
-                    time.sleep(random.uniform(0.45, 0.95))
 
             summary = self._build_summary(device_dict=device_dict, rows=all_rows)
             risk_level, action = self._evaluate_device_policy(device_dict=device_dict, rows=all_rows)
@@ -201,7 +198,7 @@ class FileScanner(QObject):
     # ------------------------------------------------------------------
 
     def _run_heuristics(self, file_path: Path, file_bytes: bytes, mime_type: str) -> dict[str, Any]:
-        """Run mock YARA, script, hidden, and autorun checks."""
+        """Run heuristic YARA-like, script, hidden, and autorun checks."""
         lower_name = file_path.name.lower()
         lower_path = str(file_path).replace("\\", "/").lower()
 
@@ -257,7 +254,7 @@ class FileScanner(QObject):
         yara_hits = heuristics.get("yara_hits", [])
         if isinstance(yara_hits, list) and yara_hits:
             score += 25
-            notes.append(f"Mock YARA hit(s): {', '.join(yara_hits)}")
+            notes.append(f"YARA-like hit(s): {', '.join(yara_hits)}")
 
         if bool(heuristics.get("script_like")):
             score += 8
@@ -301,7 +298,7 @@ class FileScanner(QObject):
                 device_type=str(device_dict.get("device_type", "storage")),
                 risk_level=RiskLevel.LOW.value,
                 action_taken=PolicyAction.MONITOR.value,
-                is_simulated=self._simulation_mode,
+                is_simulated=bool(device_dict.get("is_simulated", self._simulation_mode)),
                 notes="Scan queued by FileScanner",
             )
             return int(event.id)
@@ -321,7 +318,7 @@ class FileScanner(QObject):
                 threat_name=self._optional_str(row.get("threat_name")),
                 scan_engine="HIDShield Sandbox v1",
                 risk_level=str(row.get("risk_level", RiskLevel.SAFE.value)),
-                is_simulated=self._simulation_mode,
+                is_simulated=bool(row.get("is_simulated", self._simulation_mode)),
                 notes=self._optional_str(row.get("notes")),
             )
 
@@ -398,7 +395,7 @@ class FileScanner(QObject):
             "medium_risk_files": medium_count,
             "high_risk_files": high_count,
             "max_entropy": round(max_entropy, 4),
-            "summary_note": "Simulation scan finished with full sandbox pipeline.",
+            "summary_note": "Sandbox scan finished with full pipeline.",
             "timestamp": int(time.time()),
         }
 
@@ -427,7 +424,8 @@ class FileScanner(QObject):
                 "serial_number": self._safe_attr(device, "serial_number") or self._safe_attr(device, "serial"),
                 "manufacturer": self._safe_attr(device, "manufacturer"),
                 "device_type": self._safe_attr(device, "device_type") or "storage",
-                "is_simulated": bool(self._safe_attr(device, "is_simulated") or self._simulation_mode),
+                "is_simulated": bool(self._safe_attr(device, "is_simulated")),
+                "mount_point": self._safe_attr(device, "mount_point"),
             }
 
         if "device_name" not in payload:
@@ -438,6 +436,8 @@ class FileScanner(QObject):
             payload["device_type"] = "storage"
         if "is_simulated" not in payload:
             payload["is_simulated"] = self._simulation_mode
+        if "mount_point" not in payload:
+            payload["mount_point"] = payload.get("drive_letter")
 
         return payload
 
@@ -467,5 +467,5 @@ class FileScanner(QObject):
         if config_path.exists():
             with config_path.open("r", encoding="utf-8") as stream:
                 config = yaml.safe_load(stream) or {}
-                return bool(config.get("simulation_mode", True))
-        return True
+                return bool(config.get("simulation_mode", False))
+        return False

@@ -167,7 +167,7 @@ class HIDShieldMainWindow(QMainWindow):
         layout.addStretch()
         
         # Status Badge (SIMULATION MODE indicator)
-        env_sim = os.getenv("HID_SHIELD_SIMULATION_MODE", "true").lower()
+        env_sim = os.getenv("HID_SHIELD_SIMULATION_MODE", "false").lower()
         if env_sim in ("true", "1", "yes"):
             sim_badge = QLabel("⚡ SIMULATION MODE")
             sim_badge.setStyleSheet(f"""

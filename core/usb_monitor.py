@@ -1,26 +1,9 @@
-"""
-hid_shield.core.usb_monitor
-=============================
-Background QThread emitting USB connection/disconnection events.
-
-Design
-------
-* Inherits from ``QThread`` to run autonomously without blocking the
-  PySide6 main event loop.
-* Evaluates ``SIMULATION_MODE`` on start. If true, synthesizes realistic
-  fake USB insertion/removal events every 8–15 seconds using a
-  pre-seeded catalogue of spoofed profiles (keyboards, storage, mice).
-* Emits events to the UI thread via the global ``event_bus``.
-* Real WMI (Windows Management Instrumentation) monitoring is wrapped in
-  ``try/except`` to guarantee the thread does not crash in simulation mode.
-  On Linux, ``pyudev`` handles monitoring in real mode.
-* Debouncing filters out transient OS chatter.
-"""
+"""Background USB monitor thread using real OS device events."""
 
 from __future__ import annotations
 
 import os
-import random
+import platform
 import time
 from typing import Any
 
@@ -42,48 +25,8 @@ def _get_simulation_mode() -> bool:
     cfg = Path(__file__).resolve().parent.parent / "config.yaml"
     if cfg.exists():
         with open(cfg, "r") as fh:
-            return bool(yaml.safe_load(fh).get("simulation_mode", True))
-    return True
-
-
-# ---------------------------------------------------------------------------
-# Fake Device Catalogue
-# ---------------------------------------------------------------------------
-
-_FAKE_DEVICES: list[dict[str, Any]] = [
-    {
-        "device_name": "Logitech G502 Gaming Mouse",
-        "vendor_id": "046d",
-        "product_id": "c07d",
-        "device_type": "mouse",
-        "manufacturer": "Logitech",
-    },
-    {
-        "device_name": "SanDisk Cruzer Blade 32GB",
-        "vendor_id": "0781",
-        "product_id": "5567",
-        "device_type": "storage",
-        "manufacturer": "SanDisk",
-        "capacity_bytes": 32_000_000_000,
-        "serial_number": "SD987654321A",
-    },
-    {
-        "device_name": "Generic USB Keyboard",
-        "vendor_id": "413c",
-        "product_id": "2107",
-        "device_type": "keyboard",
-        "manufacturer": "Dell",
-        "serial_number": "DLY811K1",
-    },
-    {
-        "device_name": "[SUSPICIOUS] Arduino Leonardo HID",
-        "vendor_id": "2341",
-        "product_id": "8036",
-        "device_type": "keyboard",
-        "manufacturer": "Arduino",
-        "serial_number": "RDU_DUCKY_1",
-    },
-]
+            return bool(yaml.safe_load(fh).get("simulation_mode", False))
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -92,32 +35,26 @@ _FAKE_DEVICES: list[dict[str, Any]] = [
 
 
 class USBEventEmitter(QThread):
-    """Background thread monitoring OS events for USB lifecycle changes.
-
-    Attributes
-    ----------
-    is_running: True if the thread loop is active.
-    simulation_mode: True if generating synthetic events.
-    """
+    """Background thread monitoring real USB lifecycle changes."""
 
     def __init__(self, parent: Any = None) -> None:
         super().__init__(parent)
         self.is_running: bool = False
         self.simulation_mode: bool = _get_simulation_mode()
-
-        # Simple set to track currently "plugged in" devices for synthetic disconnects
-        self._active_sim_devices: dict[str, DeviceInfo] = {}
+        self._known_devices: dict[str, DeviceInfo] = {}
 
     def run(self) -> None:
         """Main loop of the QThread (called implicitly by ``.start()``)."""
         self.is_running = True
         print(f"[USB] USBEventEmitter started "
-              f"({'SIMULATION' if self.simulation_mode else 'LIVE'} mode)")
+              f"({'SIMULATION FLAG ON' if self.simulation_mode else 'LIVE'} mode)")
 
-        if self.simulation_mode:
-            self._run_simulation_loop()
-        else:
-            self._run_wmi_loop()
+        if platform.system().lower() != "windows":
+            print("[USB] Real USB watcher currently supports Windows WMI only.")
+            self._idle_loop()
+            return
+
+        self._run_wmi_loop()
 
     def stop(self) -> None:
         """Signal the thread loop to terminate gracefully."""
@@ -126,97 +63,131 @@ class USBEventEmitter(QThread):
         self.wait(1000)
 
     # ------------------------------------------------------------------
-    # Simulation Mode
-    # ------------------------------------------------------------------
-
-    def _run_simulation_loop(self) -> None:
-        """Indefinitely emit random fake USB events every 8–15s."""
-        while self.is_running:
-            # Sleep for a random interval (8 to 15 seconds)
-            time.sleep(random.randint(8, 15))
-            if not self.is_running:
-                break
-
-            # 20% chance to remove an existing device, 80% to plug a new one
-            if self._active_sim_devices and random.random() < 0.2:
-                self._synthesize_removal()
-            else:
-                self._synthesize_insertion()
-
-    def _synthesize_insertion(self) -> None:
-        # Pick a random profile
-        profile = random.choice(_FAKE_DEVICES)
-        dev = DeviceInfo(**profile, is_simulated=True)
-        # Randomise serial number slightly for repeated insertions
-        if random.random() > 0.5:
-            dev.serial_number = f"SIM_{random.randint(1000, 9999)}"
-
-        self._active_sim_devices[dev.device_id] = dev
-
-        # Emit the signal on the global bus
-        payload = dev.to_dict()
-        event_bus.usb_device_inserted.emit(payload)
-
-    def _synthesize_removal(self) -> None:
-        if not self._active_sim_devices:
-            return
-        device_id = random.choice(list(self._active_sim_devices.keys()))
-        dev = self._active_sim_devices.pop(device_id)
-
-        # Broadcast removal
-        event_bus.usb_device_removed.emit(dev.to_dict())
-
-    # ------------------------------------------------------------------
     # Real Mode (WMI/pyudev wrapped tightly)
     # ------------------------------------------------------------------
 
     def _run_wmi_loop(self) -> None:
-        """Monitor real OS APIs for device changes.
-
-        Wrapped in a try/except so that importing WMI dependencies does not
-        crash the app on Linux/Mac, or if the pywin32 module is missing.
-        """
+        """Monitor real USB events via Win32_USBHub WMI watchers."""
         try:
             import wmi  # type: ignore
-            # Local initialisation so it's strictly confined to this thread
+
             wmi_conn = wmi.WMI()
-            # Poll every 2 seconds for new Win32_USBControllerDevice links
-            # (In production, a WMI event watcher __InstanceCreationEvent
-            #  would be used, but polling is safer across environments without Admin rights)
-            
-            # Very basic polling loop for safety
-            known_ids = set()
-            
+            self._seed_known_devices(wmi_conn)
+
+            insertion_watcher = wmi_conn.Win32_USBHub.watch_for(
+                notification_type="Creation",
+                delay_secs=1,
+            )
+            removal_watcher = wmi_conn.Win32_USBHub.watch_for(
+                notification_type="Deletion",
+                delay_secs=1,
+            )
+
             while self.is_running:
-                current_ids = set()
+                handled_event = False
+
                 try:
-                    for usb in wmi_conn.Win32_USBControllerDevice():
-                        current_ids.add(usb.Dependent.DeviceID)
-                except Exception as wmi_err:
-                    print(f"[USB] Real WMI polling error: {wmi_err}")
-                
-                # Check for new devices (simple diff)
-                new_devices = current_ids - known_ids
-                if new_devices and known_ids: # Don't flood on startup
-                    for nd in new_devices:
-                        dev = DeviceInfo(device_id=nd, is_simulated=False)
-                        event_bus.usb_device_inserted.emit(dev.to_dict())
-                
-                # Simple removal check
-                removed = known_ids - current_ids
-                if removed and known_ids:
-                    for rd in removed:
-                        event_bus.usb_device_removed.emit({"device_id": rd})
-                
-                known_ids = current_ids
-                time.sleep(2)
-                
+                    created = insertion_watcher(timeout_ms=1200)
+                    handled_event = True
+                    self._handle_inserted_device(wmi_conn, created)
+                except wmi.x_wmi_timed_out:
+                    pass
+                except Exception as watch_err:
+                    print(f"[USB] WMI insertion watcher error: {watch_err}")
+
+                try:
+                    deleted = removal_watcher(timeout_ms=200)
+                    handled_event = True
+                    self._handle_removed_device(deleted)
+                except wmi.x_wmi_timed_out:
+                    pass
+                except Exception as watch_err:
+                    print(f"[USB] WMI removal watcher error: {watch_err}")
+
+                if not handled_event:
+                    time.sleep(0.2)
+
         except ImportError:
-            print("[USB] Error: WMI package not found. Cannot run real USB monitor.")
-            print("[USB] Falling back to idle sleep loop.")
-            while self.is_running:
-                time.sleep(2)
+            print("[USB] Missing dependency: install 'WMI' to enable real USB monitoring.")
+            self._idle_loop()
         except Exception as e:
             print(f"[USB] Critical monitor error: {e}")
-            while self.is_running:
-                time.sleep(2)
+            self._idle_loop()
+
+    def _seed_known_devices(self, wmi_conn: Any) -> None:
+        """Capture currently connected USB hubs to avoid startup event floods."""
+        try:
+            for usb_hub in wmi_conn.Win32_USBHub():
+                pnp_device_id = str(getattr(usb_hub, "PNPDeviceID", "") or "")
+                if not pnp_device_id:
+                    continue
+                mount_point = self._resolve_mount_point(wmi_conn, pnp_device_id)
+                device = DeviceInfo.from_wmi_usbhub(
+                    usb_hub,
+                    mount_point=mount_point,
+                    is_simulated=self.simulation_mode,
+                )
+                self._known_devices[device.device_id] = device
+        except Exception as seed_err:
+            print(f"[USB] Failed to seed known devices: {seed_err}")
+
+    def _handle_inserted_device(self, wmi_conn: Any, usb_hub: Any) -> None:
+        """Normalize and emit a real USB insertion event."""
+        pnp_device_id = str(getattr(usb_hub, "PNPDeviceID", "") or "")
+        mount_point = self._resolve_mount_point(wmi_conn, pnp_device_id)
+        device = DeviceInfo.from_wmi_usbhub(
+            usb_hub,
+            mount_point=mount_point,
+            is_simulated=self.simulation_mode,
+        )
+
+        if device.device_id in self._known_devices:
+            return
+
+        self._known_devices[device.device_id] = device
+        event_bus.usb_device_inserted.emit(device.to_dict())
+
+    def _handle_removed_device(self, usb_hub: Any) -> None:
+        """Emit USB removal events using the most recent known device snapshot."""
+        removed_id = str(
+            getattr(usb_hub, "DeviceID", "")
+            or getattr(usb_hub, "PNPDeviceID", "")
+            or ""
+        )
+        if not removed_id:
+            return
+
+        existing = self._known_devices.pop(removed_id, None)
+        if existing is not None:
+            event_bus.usb_device_removed.emit(existing.to_dict())
+            return
+
+        # Fallback if WMI returns an ID shape different from insertion payload.
+        event_bus.usb_device_removed.emit({"device_id": removed_id})
+
+    def _resolve_mount_point(self, wmi_conn: Any, pnp_device_id: str) -> str | None:
+        """Map a USB PNP ID to a Windows logical drive, if one exists."""
+        if not pnp_device_id:
+            return None
+
+        normalized = pnp_device_id.replace("\\\\", "\\").upper()
+        try:
+            for disk in wmi_conn.Win32_DiskDrive(InterfaceType="USB"):
+                disk_pnp = str(getattr(disk, "PNPDeviceID", "") or "").replace("\\\\", "\\").upper()
+                if normalized not in disk_pnp and disk_pnp not in normalized:
+                    continue
+
+                for partition in disk.associators("Win32_DiskDriveToDiskPartition"):
+                    for logical_disk in partition.associators("Win32_LogicalDiskToPartition"):
+                        device_id = str(getattr(logical_disk, "DeviceID", "") or "")
+                        if device_id:
+                            return f"{device_id}\\"
+        except Exception as mount_err:
+            print(f"[USB] Could not resolve mount point: {mount_err}")
+
+        return None
+
+    def _idle_loop(self) -> None:
+        """Keep thread alive safely when real monitoring is unavailable."""
+        while self.is_running:
+            time.sleep(1)

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 import sys
+import ctypes
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
     QSizePolicy,
+    QMessageBox,
 )
 
 from core.usb_monitor import USBEventEmitter
@@ -50,7 +52,7 @@ from ui.main_window import HIDShieldMainWindow
 
 # Simulation mode — when True the app runs without admin rights or real
 # USB device access.  Toggle to False for production deployments.
-SIMULATION_MODE: bool = True
+SIMULATION_MODE: bool = False
 
 # Resolve paths relative to *this* file so it works whether launched from
 # the repo root or from the hid_shield/ directory.
@@ -89,9 +91,19 @@ def load_config(config_path: Path = CONFIG_PATH) -> dict[str, Any]:
     print(f"[WARNING] Config file not found at {config_path} — using defaults.")
     return {
         "app": {"name": "HID Shield", "version": "1.0.0", "window_width": 1280, "window_height": 800},
-        "simulation_mode": True,
+        "simulation_mode": False,
         "theme": {},
     }
+
+
+def is_admin() -> bool:
+    """Return True when process has administrator privileges on Windows."""
+    if os.name != "nt":
+        return True
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -444,7 +456,12 @@ def main() -> None:
     config: dict[str, Any] = load_config()
 
     # Merge env-level simulation flag into the config dict
-    config["simulation_mode"] = config.get("simulation_mode", SIMULATION_MODE)
+    if env_sim in ("true", "1", "yes"):
+        config["simulation_mode"] = True
+    elif env_sim in ("false", "0", "no"):
+        config["simulation_mode"] = False
+    else:
+        config["simulation_mode"] = bool(config.get("simulation_mode", SIMULATION_MODE))
 
     # 3. First-run check
     check_first_run(config)
@@ -466,6 +483,15 @@ def main() -> None:
     # Apply the cyberpunk dark theme globally
     theme_cfg: dict[str, str] = config.get("theme", {})
     app.setStyleSheet(build_stylesheet(theme_cfg))
+
+    if not config["simulation_mode"] and not is_admin():
+        warning_text = (
+            "HID Shield is running without Administrator privileges.\n\n"
+            "Real USB monitoring and USBSTOR registry enforcement may be limited.\n"
+            "Run as Administrator for full real-mode protection."
+        )
+        print(f"[WARNING] {warning_text.replace(chr(10), ' ')}")
+        QMessageBox.warning(None, "Administrator Rights Required", warning_text)
 
     # 7. Start USB monitor thread and initialize the integrated main window.
     usb_monitor = USBEventEmitter()

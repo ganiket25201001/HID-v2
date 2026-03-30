@@ -17,7 +17,7 @@ app:
 # --- Simulation Mode ---
 # When True the app runs without admin privileges or real USB device access.
 # Set to False for production / real-device monitoring.
-simulation_mode: true
+simulation_mode: false
 
 # --- Security Policy Defaults ---
 policy:

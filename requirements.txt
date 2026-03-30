@@ -20,6 +20,7 @@ python-dotenv==1.0.1             # .env file loading
 cryptography==44.0.0             # AES-256, hashing, key derivation
 bcrypt==4.2.1                    # Secure PIN/password hashing
 pefile==2024.8.26                # PE header parsing for executable analysis
+WMI==1.5.1                       # Windows WMI event monitoring for real USB mode
 
 # --- Packaging & Distribution ---
 pyinstaller==6.12.0              # Single-file executable builder

@@ -32,8 +32,8 @@ def _get_simulation_mode() -> bool:
     cfg = Path(__file__).resolve().parent.parent / "config.yaml"
     if cfg.exists():
         with open(cfg, "r") as fh:
-            return bool(yaml.safe_load(fh).get("simulation_mode", True))
-    return True
+            return bool(yaml.safe_load(fh).get("simulation_mode", False))
+    return False
 
 
 class PortLockdown:

@@ -9,6 +9,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -92,26 +93,38 @@ class SandboxManager:
 
             return copied
 
-    def create_mock_files(self, session_id: str, count: int) -> list[Path]:
-        """Generate realistic synthetic file set for simulation-mode scanning."""
-        with self._lock:
-            session = self._sessions.get(session_id)
-            if session is None:
-                raise KeyError(f"Unknown sandbox session: {session_id}")
+    def shadow_copy_from_device(
+        self,
+        session_id: str,
+        device_payload: dict[str, Any],
+        *,
+        max_files: int = 500,
+    ) -> list[Path]:
+        """Copy real files from the detected USB mount path into the sandbox."""
+        source_files = self.discover_device_files(device_payload, max_files=max_files)
+        return self.shadow_copy_files(session_id=session_id, source_files=source_files)
 
-            templates = self._simulation_templates()
-            created_files: list[Path] = []
+    def discover_device_files(
+        self,
+        device_payload: dict[str, Any],
+        *,
+        max_files: int = 500,
+    ) -> list[Path]:
+        """Return file paths discovered from the connected USB volume."""
+        mount_root = self._resolve_mount_root(device_payload)
+        if mount_root is None:
+            return []
 
-            for index in range(max(1, count)):
-                template = templates[index % len(templates)]
-                file_name = template["name"].format(i=index + 1)
-                file_bytes = template["bytes"]
-                target = session.sandbox_path / file_name
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(file_bytes)
-                created_files.append(target)
-
-            return created_files
+        discovered: list[Path] = []
+        for file_path in mount_root.rglob("*"):
+            if len(discovered) >= max_files:
+                break
+            if not file_path.is_file():
+                continue
+            if self._is_ignored_path(file_path):
+                continue
+            discovered.append(file_path)
+        return discovered
 
     def cleanup_session(self, session_id: str) -> bool:
         """Delete the sandbox folder for a specific session."""
@@ -131,39 +144,31 @@ class SandboxManager:
         for session_id in session_ids:
             self.cleanup_session(session_id)
 
-    def _simulation_templates(self) -> list[dict[str, bytes | str]]:
-        """Return byte templates that mimic mixed benign and malicious USB content."""
-        return [
-            {
-                "name": "docs/employee_handbook_{i}.pdf",
-                "bytes": b"%PDF-1.6\n" + b"A" * 2048,
-            },
-            {
-                "name": "media/launch_promo_{i}.mp4",
-                "bytes": os.urandom(8192),
-            },
-            {
-                "name": "scripts/startup_sync_{i}.ps1",
-                "bytes": b"Start-Process powershell -WindowStyle Hidden\n" + b"B" * 768,
-            },
-            {
-                "name": "bin/firmware_updater_{i}.exe",
-                "bytes": b"MZ" + os.urandom(12288),
-            },
-            {
-                "name": "autorun.inf",
-                "bytes": b"[autorun]\nopen=bin/firmware_updater_1.exe\naction=Run updater\n",
-            },
-            {
-                "name": ".hidden/.cache_payload_{i}.dat",
-                "bytes": os.urandom(4096),
-            },
-            {
-                "name": "docs/macrosheet_{i}.docm",
-                "bytes": b"PK\x03\x04" + b"macro" * 300,
-            },
-            {
-                "name": "bin/loader_inject_{i}.dll",
-                "bytes": b"MZ" + os.urandom(10240),
-            },
+    def _resolve_mount_root(self, device_payload: dict[str, Any]) -> Path | None:
+        """Resolve a usable mount root from USB monitor payload fields."""
+        candidates = [
+            device_payload.get("mount_point"),
+            device_payload.get("drive_letter"),
+            device_payload.get("device_path"),
+            device_payload.get("path"),
         ]
+
+        for candidate in candidates:
+            if not candidate:
+                continue
+            try:
+                path = Path(str(candidate))
+                if path.exists() and path.is_dir():
+                    return path
+            except OSError:
+                continue
+        return None
+
+    def _is_ignored_path(self, file_path: Path) -> bool:
+        """Filter out OS metadata and inaccessible system files."""
+        lowered = file_path.name.lower()
+        if lowered in {"thumbs.db", "desktop.ini"}:
+            return True
+        if lowered.startswith("$"):
+            return True
+        return False
