@@ -51,7 +51,7 @@ class AnimatedStatLabel(QLabel):
         super().__init__(parent)
         self.setProperty("class", "h1")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setStyleSheet(f"font-size: 32px; color: {Theme.ACCENT_CYAN};")
+        self.setStyleSheet(f"font-size: 30px; color: {Theme.ACCENT_CYAN};")
         
         self._value: int = 0
         self._anim = QVariantAnimation(self)
@@ -114,7 +114,7 @@ class DashboardScreen(QWidget):
         super().__init__(parent)
         
         # 1. Background layer using absolute positioning
-        self.particles = ParticleBackground(self, num_particles=60)
+        self.particles = ParticleBackground(self, num_particles=42)
         self.particles.resize(1920, 1080)  # Max reasonable screen, or hook to resizeEvent
 
         # 2. Main layout grid
@@ -154,11 +154,11 @@ class DashboardScreen(QWidget):
         card1, self.val_scans = self._create_stat_panel("Total Scans Today")
         # 2. Threats Blocked
         card2, self.val_threats = self._create_stat_panel("Threats Blocked")
-        self.val_threats.setStyleSheet(f"font-size: 32px; color: {Theme.ACCENT_MAGENTA};")
+        self.val_threats.setStyleSheet(f"font-size: 30px; color: {Theme.ACCENT_MAGENTA};")
         self.val_threats.setText("0")
         # 3. Known Devices
-        card3, self.val_devices = self._create_stat_panel("Active Devices")
-        self.val_devices.setStyleSheet(f"font-size: 32px; color: {Theme.ACCENT_GREEN};")
+        card3, self.val_devices = self._create_stat_panel("Devices Observed")
+        self.val_devices.setStyleSheet(f"font-size: 30px; color: {Theme.ACCENT_GREEN};")
 
         self.grid.addWidget(card1, 0, 0)
         self.grid.addWidget(card2, 0, 1)
@@ -197,7 +197,7 @@ class DashboardScreen(QWidget):
         status_lbl.setStyleSheet(f"color: {Theme.ACCENT_GREEN}; font-weight: bold; font-size: 16px;")
         status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
-        policy_lbl = QLabel(f"Policy: Auto-Block Critical\nConfig: {Theme.FONT_FAMILY}")
+        policy_lbl = QLabel("Policy: Auto-block high risk threats\nTelemetry: Live event stream enabled")
         policy_lbl.setProperty("class", "subtitle")
         policy_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
@@ -220,7 +220,7 @@ class DashboardScreen(QWidget):
         title = QLabel("Recent USB Events")
         title.setProperty("class", "h2")
         
-        self.live_indicator = QLabel("● LIVE")
+        self.live_indicator = QLabel("LIVE")
         self.live_indicator.setStyleSheet(f"color: {Theme.ACCENT_GREEN}; font-weight: bold; font-size: 12px;")
         
         header_layout.addWidget(title)
@@ -259,7 +259,7 @@ class DashboardScreen(QWidget):
             threats = 0
 
         # 2. Update stats blocks
-        self.val_scans.set_value(total + 10)  # Injecting base 10 for visual demo
+        self.val_scans.set_value(total)
         self.val_threats.set_value(threats)
         self.val_devices.set_value(len(recents))
         

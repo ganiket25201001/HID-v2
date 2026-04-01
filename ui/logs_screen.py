@@ -84,59 +84,40 @@ class LogsScreen(QWidget):
     def _build_ui(self) -> None:
         """Create toolbar and tabbed table layout."""
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 18, 24, 18)
-        root.setSpacing(12)
+        root.setContentsMargins(22, 16, 22, 16)
+        root.setSpacing(10)
 
         # Toolbar
         toolbar_card = GlassCard(glow=True)
         toolbar_layout = QHBoxLayout(toolbar_card)
-        toolbar_layout.setContentsMargins(14, 12, 14, 12)
-        toolbar_layout.setSpacing(8)
+        toolbar_layout.setContentsMargins(14, 10, 14, 10)
+        toolbar_layout.setSpacing(10)
 
         title = QLabel("Logs & Reports")
         title.setProperty("class", "h1")
-        title.setStyleSheet(f"font-size: 26px; color: {Theme.ACCENT_CYAN}; font-weight: 800;")
+        title.setStyleSheet(f"font-size: 22px; color: {Theme.ACCENT_CYAN}; font-weight: 800;")
 
         self.export_pdf_btn = AnimatedButton("Export PDF", accent_color=Theme.ACCENT_CYAN)
         self.clear_logs_btn = AnimatedButton("Clear Old Logs", accent_color=Theme.ACCENT_MAGENTA)
+        self.apply_date_filter_btn = AnimatedButton("Apply Date Filter", accent_color=Theme.ACCENT_AMBER)
+
+        self.export_pdf_btn.setFixedHeight(38)
+        self.clear_logs_btn.setFixedHeight(38)
+        self.apply_date_filter_btn.setFixedHeight(38)
 
         self.risk_filter_combo = QComboBox(self)
         self.risk_filter_combo.addItems(["All", "Safe", "Low", "Medium", "High", "Critical", "Dangerous"])
-        self.risk_filter_combo.setStyleSheet(
-            f"""
-            QComboBox {{
-                background-color: {Theme.BG_TERTIARY};
-                border: 1px solid {Theme.BORDER_LIGHT};
-                color: {Theme.TEXT_PRIMARY};
-                border-radius: 6px;
-                padding: 6px 10px;
-                min-width: 110px;
-            }}
-            """
-        )
+        self.risk_filter_combo.setFixedSize(140, 38)
 
         self.from_date_edit = QDateEdit(self)
         self.from_date_edit.setCalendarPopup(True)
         self.from_date_edit.setDate(datetime.now().date() - timedelta(days=7))
+        self.from_date_edit.setFixedSize(108, 38)
 
         self.to_date_edit = QDateEdit(self)
         self.to_date_edit.setCalendarPopup(True)
         self.to_date_edit.setDate(datetime.now().date())
-
-        for editor in (self.from_date_edit, self.to_date_edit):
-            editor.setStyleSheet(
-                f"""
-                QDateEdit {{
-                    background-color: {Theme.BG_TERTIARY};
-                    border: 1px solid {Theme.BORDER_LIGHT};
-                    color: {Theme.TEXT_PRIMARY};
-                    border-radius: 6px;
-                    padding: 6px 8px;
-                }}
-                """
-            )
-
-        self.apply_date_filter_btn = AnimatedButton("Apply Date Filter", accent_color=Theme.ACCENT_AMBER)
+        self.to_date_edit.setFixedSize(108, 38)
 
         toolbar_layout.addWidget(title)
         toolbar_layout.addStretch(1)
@@ -165,10 +146,12 @@ class LogsScreen(QWidget):
                 background-color: {Theme.BG_TERTIARY};
                 color: {Theme.TEXT_SECONDARY};
                 border: 1px solid {Theme.BORDER};
-                padding: 8px 14px;
-                margin-right: 4px;
+                padding: 9px 16px;
+                margin-right: 6px;
                 border-top-left-radius: 6px;
                 border-top-right-radius: 6px;
+                min-width: 126px;
+                font-weight: 600;
             }}
             QTabBar::tab:selected {{
                 color: {Theme.ACCENT_CYAN};

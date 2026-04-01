@@ -6,6 +6,7 @@ from typing import Any
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QFrame,
     QDialog,
     QFormLayout,
     QHBoxLayout,
@@ -35,15 +36,15 @@ class LoginDialog(QDialog):
 
         self.setWindowTitle("HID Shield Authentication")
         self.setModal(True)
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(620)
         self.setStyleSheet(f"background-color: {Theme.BG_PRIMARY};")
 
         self._build_ui()
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 20, 20, 20)
-        root.setSpacing(14)
+        root.setContentsMargins(24, 24, 24, 24)
+        root.setSpacing(12)
 
         title = QLabel("Secure Operator Login")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -51,41 +52,62 @@ class LoginDialog(QDialog):
             f"font-size: 28px; font-weight: 800; color: {Theme.ACCENT_CYAN}; letter-spacing: 1px;"
         )
 
-        subtitle = QLabel("Authenticate to access LIVE USB controls")
+        subtitle = QLabel("Authenticate to access live USB controls")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setStyleSheet(f"font-size: 13px; color: {Theme.TEXT_SECONDARY};")
 
         root.addWidget(title)
         root.addWidget(subtitle)
 
+        divider = QFrame(self)
+        divider.setFrameShape(QFrame.Shape.HLine)
+        divider.setStyleSheet(f"color: {Theme.BORDER}; background: {Theme.BORDER}; max-height: 1px;")
+        root.addWidget(divider)
+
         card = GlassCard(glow=True)
         form = QFormLayout(card)
         form.setContentsMargins(18, 16, 18, 16)
-        form.setSpacing(10)
+        form.setHorizontalSpacing(18)
+        form.setVerticalSpacing(12)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         self.username_input = QLineEdit(self)
         self.username_input.setPlaceholderText("Username")
+        self.username_input.setMinimumHeight(40)
 
         self.password_input = QLineEdit(self)
         self.password_input.setPlaceholderText("Password")
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_input.setMinimumHeight(40)
 
         self.security_key_input = QLineEdit(self)
         self.security_key_input.setPlaceholderText("Security Key (optional)")
         self.security_key_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.security_key_input.setMinimumHeight(40)
 
-        form.addRow("Username", self.username_input)
-        form.addRow("Password", self.password_input)
-        form.addRow("Security Key", self.security_key_input)
+        for label_text in ("Username", "Password", "Security Key"):
+            label = QLabel(label_text)
+            label.setMinimumWidth(130)
+            label.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-weight: 600;")
+            if label_text == "Username":
+                form.addRow(label, self.username_input)
+            elif label_text == "Password":
+                form.addRow(label, self.password_input)
+            else:
+                form.addRow(label, self.security_key_input)
 
         root.addWidget(card)
 
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(10)
+        btn_row.setSpacing(12)
 
         self.login_btn = AnimatedButton("Login", accent_color=Theme.ACCENT_GREEN)
         self.signup_btn = AnimatedButton("Sign Up", accent_color=Theme.ACCENT_CYAN)
         self.unlock_btn = AnimatedButton("Unlock All Ports with Key", accent_color=Theme.ACCENT_AMBER)
+
+        self.login_btn.setMinimumHeight(42)
+        self.signup_btn.setMinimumHeight(42)
+        self.unlock_btn.setMinimumHeight(42)
 
         self.login_btn.clicked.connect(self._on_login_clicked)
         self.signup_btn.clicked.connect(self._on_signup_clicked)

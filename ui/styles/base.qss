@@ -18,6 +18,73 @@ QWidget {
     background-color: transparent;
 }
 
+/* --- Inputs / Forms -------------------------------------------------- */
+
+QLineEdit,
+QPlainTextEdit,
+QTextEdit,
+QComboBox,
+QDateEdit,
+QDateTimeEdit,
+QSpinBox,
+QDoubleSpinBox {
+    background-color: rgba(10, 18, 34, 0.95);
+    border: 1px solid {{BORDER}};
+    border-radius: 8px;
+    padding: 8px 10px;
+    color: {{TEXT_PRIMARY}};
+    selection-background-color: {{ACCENT_CYAN}};
+    selection-color: {{BG_PRIMARY}};
+}
+
+QLineEdit:hover,
+QPlainTextEdit:hover,
+QTextEdit:hover,
+QComboBox:hover,
+QDateEdit:hover,
+QDateTimeEdit:hover,
+QSpinBox:hover,
+QDoubleSpinBox:hover {
+    border: 1px solid {{BORDER_LIGHT}};
+}
+
+QLineEdit:focus,
+QPlainTextEdit:focus,
+QTextEdit:focus,
+QComboBox:focus,
+QDateEdit:focus,
+QDateTimeEdit:focus,
+QSpinBox:focus,
+QDoubleSpinBox:focus {
+    border: 1px solid {{ACCENT_CYAN}};
+    background-color: rgba(8, 22, 40, 0.98);
+}
+
+QLineEdit[echoMode="2"] {
+    letter-spacing: 1px;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 26px;
+}
+
+QComboBox::down-arrow {
+    width: 0px;
+    height: 0px;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 7px solid {{TEXT_SECONDARY}};
+}
+
+QComboBox QAbstractItemView {
+    background-color: {{BG_SECONDARY}};
+    border: 1px solid {{BORDER_LIGHT}};
+    border-radius: 8px;
+    selection-background-color: rgba(0, 212, 255, 0.14);
+    selection-color: {{TEXT_PRIMARY}};
+}
+
 /* --- Typography ----------------------------------------------------- */
 
 QLabel {
@@ -65,8 +132,8 @@ QPushButton {
     background-color: {{BG_TERTIARY}};
     color: {{TEXT_PRIMARY}};
     border: 1px solid {{BORDER}};
-    border-radius: 6px;
-    padding: 8px 16px;
+    border-radius: 10px;
+    padding: 10px 18px;
     font-weight: 600;
 }
 
@@ -91,12 +158,12 @@ QPushButton:disabled {
 QPushButton.nav-button {
     background-color: transparent;
     border: none;
-    border-radius: 8px;
+    border-radius: 10px;
     text-align: left;
-    padding: 12px 16px;
+    padding: 13px 16px;
     color: {{TEXT_SECONDARY}};
-    font-size: 15px;
-    font-weight: 500;
+    font-size: 14px;
+    font-weight: 600;
 }
 
 QPushButton.nav-button:hover {
@@ -167,7 +234,45 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
 /* --- QToast / Temporary notifications ------------------------------- */
 
 QFrame#toastFrame {
-    background-color: {{BG_TERTIARY}};
-    border: 1px solid {{ACCENT_CYAN}};
-    border-radius: 8px;
+    background-color: rgba(14, 24, 44, 0.97);
+    border: 1px solid {{BORDER_LIGHT}};
+    border-radius: 10px;
+}
+
+/* --- Data widgets ---------------------------------------------------- */
+
+QTableWidget,
+QTableView,
+QTreeWidget,
+QListWidget {
+    background-color: rgba(14, 24, 44, 0.85);
+    border: 1px solid {{BORDER}};
+    border-radius: 10px;
+    gridline-color: rgba(51, 65, 85, 0.45);
+    alternate-background-color: rgba(20, 33, 57, 0.6);
+}
+
+QHeaderView::section {
+    background-color: rgba(24, 36, 60, 0.92);
+    color: {{TEXT_PRIMARY}};
+    border: none;
+    border-right: 1px solid rgba(51, 65, 85, 0.5);
+    border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+    padding: 8px 10px;
+    font-weight: 700;
+}
+
+QTableWidget::item,
+QTableView::item,
+QTreeWidget::item,
+QListWidget::item {
+    padding: 6px;
+}
+
+QTableWidget::item:selected,
+QTableView::item:selected,
+QTreeWidget::item:selected,
+QListWidget::item:selected {
+    background-color: rgba(0, 212, 255, 0.18);
+    color: {{TEXT_PRIMARY}};
 }

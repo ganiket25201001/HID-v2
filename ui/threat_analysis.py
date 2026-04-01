@@ -64,7 +64,8 @@ class _ThreatDonutChart(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setMinimumSize(230, 230)
+        self.setMinimumSize(170, 170)
+        self.setMaximumSize(220, 220)
 
         self._counts: dict[str, int] = {"low": 0, "medium": 0, "high": 0}
         self._display_ratio: float = 1.0
@@ -163,8 +164,8 @@ class ThreatAnalysisScreen(QWidget):
     def _build_ui(self) -> None:
         """Compose top summary region and lower split investigation layout."""
         root = QVBoxLayout(self)
-        root.setContentsMargins(26, 22, 26, 22)
-        root.setSpacing(18)
+        root.setContentsMargins(22, 18, 22, 18)
+        root.setSpacing(14)
 
         # Header band
         header_card = GlassCard(glow=True)
@@ -173,10 +174,10 @@ class ThreatAnalysisScreen(QWidget):
         header_layout.setHorizontalSpacing(18)
         header_layout.setVerticalSpacing(8)
 
-        self.header_title = QLabel("Scan Complete - Threat Analysis")
+        self.header_title = QLabel("Scan Complete | Threat Analysis")
         self.header_title.setProperty("class", "h1")
         self.header_title.setStyleSheet(
-            f"font-size: 30px; font-weight: 800; letter-spacing: 1px; color: {Theme.ACCENT_CYAN};"
+            f"font-size: 22px; font-weight: 800; letter-spacing: 1px; color: {Theme.ACCENT_CYAN};"
         )
 
         self.device_info_label = QLabel("Awaiting scan completion event...")
@@ -195,23 +196,26 @@ class ThreatAnalysisScreen(QWidget):
         top_metrics_row.setSpacing(14)
 
         gauge_card = GlassCard(glow=False)
+        gauge_card.setMaximumHeight(300)
         gauge_layout = QVBoxLayout(gauge_card)
-        gauge_layout.setContentsMargins(16, 12, 16, 14)
-        gauge_layout.setSpacing(8)
+        gauge_layout.setContentsMargins(14, 10, 14, 10)
+        gauge_layout.setSpacing(6)
 
         gauge_title = QLabel("Device-Level Risk")
         gauge_title.setProperty("class", "h2")
 
         self.risk_gauge = RiskGauge(self)
-        self.risk_gauge.setMinimumSize(250, 250)
+        self.risk_gauge.setMinimumSize(170, 170)
+        self.risk_gauge.setMaximumSize(220, 220)
 
         gauge_layout.addWidget(gauge_title)
         gauge_layout.addWidget(self.risk_gauge, alignment=Qt.AlignmentFlag.AlignCenter)
 
         donut_card = GlassCard(glow=False)
+        donut_card.setMaximumHeight(300)
         donut_layout = QVBoxLayout(donut_card)
-        donut_layout.setContentsMargins(16, 12, 16, 14)
-        donut_layout.setSpacing(8)
+        donut_layout.setContentsMargins(14, 10, 14, 10)
+        donut_layout.setSpacing(6)
 
         donut_title = QLabel("Threat Breakdown")
         donut_title.setProperty("class", "h2")
@@ -230,7 +234,7 @@ class ThreatAnalysisScreen(QWidget):
         top_metrics_row.addWidget(gauge_card, stretch=1)
         top_metrics_row.addWidget(donut_card, stretch=1)
 
-        root.addLayout(top_metrics_row)
+        root.addLayout(top_metrics_row, stretch=0)
 
         # Lower split
         split = QSplitter(Qt.Orientation.Horizontal)
@@ -264,7 +268,9 @@ class ThreatAnalysisScreen(QWidget):
 
         split.addWidget(left_card)
         split.addWidget(right_card)
-        split.setSizes([40, 60])
+        split.setStretchFactor(0, 4)
+        split.setStretchFactor(1, 6)
+        split.setSizes([520, 780])
 
         root.addWidget(split, stretch=1)
 

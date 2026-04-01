@@ -60,8 +60,11 @@ class ToastNotification(QFrame):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(16, 8, 16, 8)
         
-        icon = QLabel("🔔")
-        icon.setStyleSheet("font-size: 20px;")
+        icon = QLabel("NOTICE")
+        icon.setStyleSheet(
+            "font-size: 10px; font-weight: 700; letter-spacing: 1px; "
+            f"color: {Theme.ACCENT_CYAN};"
+        )
         
         msg = QLabel(message)
         msg.setStyleSheet("color: " + Theme.TEXT_PRIMARY + "; font-weight: bold;")
@@ -157,15 +160,23 @@ class HIDShieldMainWindow(QMainWindow):
         layout.setContentsMargins(24, 0, 24, 0)
         
         # Logo + Title
-        logo = QLabel("🛡️")
-        logo.setStyleSheet("font-size: 24px;")
+        logo = QLabel("H")
+        logo.setFixedSize(28, 28)
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        logo.setStyleSheet(
+            f"font-size: 15px; font-weight: 800; color: {Theme.BG_PRIMARY};"
+            f"background-color: {Theme.ACCENT_CYAN}; border-radius: 14px;"
+        )
         
         title = QLabel("HID SHIELD")
         title.setProperty("class", "h1")
-        title.setStyleSheet(f"color: {Theme.ACCENT_CYAN}; letter-spacing: 2px; font-weight: 800;")
+        title.setStyleSheet(
+            f"color: {Theme.ACCENT_CYAN}; letter-spacing: 3px; font-weight: 800;"
+            "font-size: 32px;"
+        )
         
         layout.addWidget(logo)
-        layout.addSpacing(8)
+        layout.addSpacing(12)
         layout.addWidget(title)
         
         layout.addStretch()
@@ -204,11 +215,11 @@ class HIDShieldMainWindow(QMainWindow):
         layout.setSpacing(8)
         
         nav_items = [
-            ("📊 Dashboard", 0),
-            ("🔌 Live USB", 1),
-            ("🧬 Threat Analysis", 2),
-            ("📜 Logs & Reports", 3),
-            ("🛠️ Settings", 4)
+            ("Dashboard", 0),
+            ("Live USB", 1),
+            ("Threat Analysis", 2),
+            ("Logs & Reports", 3),
+            ("Settings", 4),
         ]
         
         self.nav_buttons: list[QPushButton] = []

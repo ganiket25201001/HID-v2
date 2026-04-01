@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QProgressBar,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -69,7 +70,7 @@ class _GlowingUSBIcon(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setFixedSize(168, 168)
+        self.setFixedSize(124, 124)
         self._pulse: float = 0.0
 
         self._pulse_animation = QVariantAnimation(self)
@@ -195,8 +196,8 @@ class LiveUSBDetectionScreen(QWidget):
     def _build_ui(self) -> None:
         """Build the takeover layout with centered pipeline and info panels."""
         root_layout = QVBoxLayout(self)
-        root_layout.setContentsMargins(56, 42, 56, 42)
-        root_layout.setSpacing(20)
+        root_layout.setContentsMargins(34, 24, 34, 24)
+        root_layout.setSpacing(14)
 
         # Header section
         header_wrap = QVBoxLayout()
@@ -206,13 +207,13 @@ class LiveUSBDetectionScreen(QWidget):
         top_line.setProperty("class", "h1")
         top_line.setAlignment(Qt.AlignmentFlag.AlignCenter)
         top_line.setStyleSheet(
-            f"font-size: 42px; font-weight: 800; letter-spacing: 2px; color: {Theme.ACCENT_CYAN};"
+            f"font-size: 24px; font-weight: 800; letter-spacing: 2px; color: {Theme.ACCENT_CYAN};"
         )
 
         subtitle = QLabel("Realtime deep inspection and policy enforcement in progress")
         subtitle.setProperty("class", "subtitle")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle.setStyleSheet(f"font-size: 15px; color: {Theme.TEXT_SECONDARY};")
+        subtitle.setStyleSheet(f"font-size: 13px; color: {Theme.TEXT_SECONDARY};")
 
         header_wrap.addWidget(top_line)
         header_wrap.addWidget(subtitle)
@@ -228,22 +229,34 @@ class LiveUSBDetectionScreen(QWidget):
 
         # Pipeline center stage.
         self.pipeline = PipelineWidget(self)
+        self.pipeline.setVisible(False)
         root_layout.addWidget(self.pipeline)
 
         # Progress + file count panel.
         progress_card = GlassCard(glow=True)
         progress_layout = QVBoxLayout(progress_card)
-        progress_layout.setContentsMargins(20, 18, 20, 18)
+        progress_layout.setContentsMargins(18, 14, 18, 14)
         progress_layout.setSpacing(8)
 
         labels_row = QHBoxLayout()
-        labels_row.setSpacing(12)
+        labels_row.setContentsMargins(0, 0, 0, 0)
+        labels_row.setSpacing(10)
+        labels_row.setAlignment(Qt.AlignmentFlag.AlignVCenter)
 
         self.scan_status_label = QLabel("Awaiting USB insertion...")
-        self.scan_status_label.setStyleSheet(f"font-size: 14px; color: {Theme.TEXT_PRIMARY};")
+        self.scan_status_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.scan_status_label.setMinimumWidth(260)
+        self.scan_status_label.setWordWrap(False)
+        self.scan_status_label.setStyleSheet(
+            f"font-size: 14px; color: {Theme.TEXT_PRIMARY}; background-color: transparent;"
+        )
 
         self.file_count_label = QLabel("Files inspected: 0")
-        self.file_count_label.setStyleSheet(f"font-size: 14px; color: {Theme.ACCENT_GREEN}; font-weight: 700;")
+        self.file_count_label.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Preferred)
+        self.file_count_label.setMinimumWidth(160)
+        self.file_count_label.setStyleSheet(
+            f"font-size: 14px; color: {Theme.ACCENT_GREEN}; font-weight: 700; background-color: transparent;"
+        )
         self.file_count_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
         labels_row.addWidget(self.scan_status_label)
@@ -266,7 +279,7 @@ class LiveUSBDetectionScreen(QWidget):
         # Device info panel.
         info_card = GlassCard(glow=False)
         info_layout = QGridLayout(info_card)
-        info_layout.setContentsMargins(20, 16, 20, 16)
+        info_layout.setContentsMargins(18, 14, 18, 14)
         info_layout.setHorizontalSpacing(18)
         info_layout.setVerticalSpacing(8)
 
@@ -296,7 +309,7 @@ class LiveUSBDetectionScreen(QWidget):
         action_row.addStretch(1)
 
         self.cancel_button = AnimatedButton("Cancel Scan", accent_color=Theme.ACCENT_MAGENTA)
-        self.cancel_button.setFixedSize(172, 42)
+        self.cancel_button.setFixedSize(162, 38)
 
         action_row.addWidget(self.cancel_button)
         root_layout.addLayout(action_row)
@@ -436,6 +449,7 @@ class LiveUSBDetectionScreen(QWidget):
         self.file_count_label.setText("Files inspected: 0")
         self.scan_status_label.setText("Scan started: analyzing file signatures...")
 
+        self.pipeline.setVisible(True)
         self.pipeline.reset_pipeline()
         self.pipeline.start_intro_animation()
 
@@ -508,6 +522,7 @@ class LiveUSBDetectionScreen(QWidget):
         blocked = self._lockdown.apply_policy(device_id=device_id, action="block")
 
         self.scan_status_label.setText("Scan aborted: device blocked by operator")
+        self.pipeline.setVisible(False)
 
         result_payload: dict[str, Any] = {
             "device": self._current_device,
@@ -548,15 +563,15 @@ class LiveUSBDetectionScreen(QWidget):
         rect = self.rect()
 
         top_glow = QColor(Theme.ACCENT_CYAN)
-        top_glow.setAlpha(28)
+        top_glow.setAlpha(10)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(top_glow)
-        painter.drawRoundedRect(rect.adjusted(24, 16, -24, -rect.height() + 150), 18, 18)
+        painter.drawRoundedRect(rect.adjusted(24, 14, -24, -rect.height() + 86), 14, 14)
 
         bottom_glow = QColor(Theme.ACCENT_MAGENTA)
-        bottom_glow.setAlpha(16)
+        bottom_glow.setAlpha(8)
         painter.setBrush(bottom_glow)
-        painter.drawRoundedRect(rect.adjusted(36, rect.height() - 180, -36, -30), 20, 20)
+        painter.drawRoundedRect(rect.adjusted(36, rect.height() - 92, -36, -22), 14, 14)
 
         edge_pen = QPen(QColor(Theme.BORDER_LIGHT))
         edge_pen.setWidth(1)

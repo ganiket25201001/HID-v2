@@ -44,7 +44,8 @@ class _PipelineStageWidget(QWidget):
 
     def __init__(self, icon_text: str, title: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setMinimumSize(180, 180)
+        self.setMinimumSize(128, 128)
+        self.setMaximumHeight(142)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
 
         self._icon_text: str = icon_text
@@ -155,7 +156,7 @@ class _PipelineStageWidget(QWidget):
         # Icon glyph.
         painter.setPen(QPen(QColor(Theme.TEXT_PRIMARY)))
         icon_font = painter.font()
-        icon_font.setPointSize(22)
+        icon_font.setPointSize(16)
         icon_font.setBold(True)
         painter.setFont(icon_font)
         painter.drawText(badge_rect, Qt.AlignmentFlag.AlignCenter, self._icon_text)
@@ -163,11 +164,11 @@ class _PipelineStageWidget(QWidget):
         painter.restore()
 
         # Stage title under the badge.
-        title_rect = rect.adjusted(6, rect.height() - 54, -6, -10)
+        title_rect = rect.adjusted(6, rect.height() - 42, -6, -8)
         title_color = QColor(Theme.TEXT_PRIMARY if self._active or self._completed else Theme.TEXT_SECONDARY)
         painter.setPen(QPen(title_color))
         title_font = painter.font()
-        title_font.setPointSize(11)
+        title_font.setPointSize(10)
         title_font.setBold(True)
         painter.setFont(title_font)
         painter.drawText(title_rect, Qt.AlignmentFlag.AlignCenter, self._title)
@@ -228,8 +229,8 @@ class PipelineWidget(QWidget):
     def _build_ui(self) -> None:
         """Create stage widgets and horizontal pipeline layout."""
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(14)
+        layout.setContentsMargins(6, 4, 6, 4)
+        layout.setSpacing(10)
 
         stages = [
             ("USB", "USB Ingest"),

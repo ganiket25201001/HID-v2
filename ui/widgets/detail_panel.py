@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -111,16 +112,29 @@ class DetailPanel(QWidget):
 
     def _build_ui(self) -> None:
         """Create metadata, entropy, signatures, and imports sections."""
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        scroll = QScrollArea(self)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+
+        content = QWidget(self)
+        root = QVBoxLayout(content)
         root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(14)
+        root.setSpacing(12)
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
 
         # Metadata card
         meta_card = GlassCard(glow=False)
         meta_layout = QGridLayout(meta_card)
         meta_layout.setContentsMargins(18, 16, 18, 16)
-        meta_layout.setHorizontalSpacing(14)
-        meta_layout.setVerticalSpacing(8)
+        meta_layout.setHorizontalSpacing(16)
+        meta_layout.setVerticalSpacing(10)
 
         title = QLabel("File Intelligence")
         title.setProperty("class", "h2")
@@ -165,7 +179,7 @@ class DetailPanel(QWidget):
         entropy_card = GlassCard(glow=True)
         entropy_layout = QVBoxLayout(entropy_card)
         entropy_layout.setContentsMargins(18, 16, 18, 16)
-        entropy_layout.setSpacing(8)
+        entropy_layout.setSpacing(10)
 
         entropy_title = QLabel("Shannon Entropy")
         entropy_title.setProperty("class", "h2")
@@ -192,7 +206,7 @@ class DetailPanel(QWidget):
         intel_card = GlassCard(glow=False)
         intel_layout = QGridLayout(intel_card)
         intel_layout.setContentsMargins(18, 16, 18, 16)
-        intel_layout.setHorizontalSpacing(16)
+        intel_layout.setHorizontalSpacing(14)
         intel_layout.setVerticalSpacing(8)
 
         yara_title = QLabel("YARA Matches")
@@ -202,6 +216,8 @@ class DetailPanel(QWidget):
 
         self.yara_list = QListWidget()
         self.imports_list = QListWidget()
+        self.yara_list.setMinimumHeight(180)
+        self.imports_list.setMinimumHeight(180)
 
         list_css = f"""
             QListWidget {{
