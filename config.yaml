@@ -1,7 +1,5 @@
 # =============================================================================
-# HID Shield – Default Configuration
-# This file is loaded at startup and can be overridden by environment variables
-# or the user's local config stored in the database.
+# HID Shield - Production Configuration
 # =============================================================================
 
 # --- Application Metadata ---
@@ -14,62 +12,53 @@ app:
   min_window_width: 960
   min_window_height: 640
 
-# --- Simulation Mode ---
-# When True the app runs without admin privileges or real USB device access.
-# Set to False for production / real-device monitoring.
+# Keep this key for compatibility with modules that still read it.
+# Production default is always real USB mode.
 simulation_mode: false
 
 # --- Security Policy Defaults ---
 policy:
-  # Action taken when an unknown HID device is plugged in:
-  #   "block"   – immediately disable the device
-  #   "prompt"  – ask the user to allow / deny
-  #   "allow"   – silently allow (not recommended)
+  # Action taken when an unknown HID device is plugged in.
   default_action: "prompt"
 
-  # Automatically block devices whose keystroke-entropy score exceeds this
-  # threshold (range 0.0 – 1.0, where 1.0 = maximum randomness / suspicious).
+  # Threshold range: 0.0 - 1.0
   entropy_threshold: 0.65
 
-  # Maximum keystrokes-per-second before flagging a device as suspicious.
+  # Maximum keystrokes per second before flagging a device as suspicious.
   max_keystroke_rate: 80
 
-  # Seconds to wait before re-evaluating a blocked device.
   cooldown_seconds: 30
 
-  # Whether to log every individual keystroke (privacy-sensitive).
+  # Privacy-sensitive; keep false in production unless needed.
   log_keystrokes: false
 
 # --- Database ---
 database:
-  # Relative path resolved from the app's data directory.
   path: "hid_shield.db"
-  echo: false          # SQLAlchemy SQL echo (debug only)
+  echo: false
 
 # --- Logging ---
 logging:
-  level: "INFO"        # DEBUG | INFO | WARNING | ERROR | CRITICAL
+  level: "INFO"
   file: "hid_shield.log"
-  rotation: "10 MB"    # Loguru rotation size
-  retention: "30 days" # How long to keep old log files
+  rotation: "10 MB"
+  retention: "30 days"
 
 # --- UI / Theme ---
 theme:
-  # Cyberpunk dark palette (matches the original design spec)
-  bg_primary: "#0a0e17"       # Deep space background
-  bg_secondary: "#111827"     # Card / panel background
-  bg_tertiary: "#1a1f2e"      # Elevated surfaces
-  accent_cyan: "#00d4ff"      # Primary accent – neon cyan
-  accent_magenta: "#ff006e"   # Alert / danger accent – neon magenta
-  accent_green: "#00ff88"     # Success / safe accent – neon green
-  accent_amber: "#ffb800"     # Warning accent – amber
-  text_primary: "#e2e8f0"     # Main text colour
-  text_secondary: "#94a3b8"   # Muted / secondary text
-  text_disabled: "#475569"    # Disabled text
-  border: "#1e293b"           # Subtle borders
-  glow_cyan: "rgba(0,212,255,0.15)"    # Soft glow overlay
-  glow_magenta: "rgba(255,0,110,0.15)" # Soft danger glow
+  bg_primary: "#0a0e17"
+  bg_secondary: "#111827"
+  bg_tertiary: "#1a1f2e"
+  accent_cyan: "#00d4ff"
+  accent_magenta: "#ff006e"
+  accent_green: "#00ff88"
+  accent_amber: "#ffb800"
+  text_primary: "#e2e8f0"
+  text_secondary: "#94a3b8"
+  text_disabled: "#475569"
+  border: "#1e293b"
+  glow_cyan: "rgba(0,212,255,0.15)"
+  glow_magenta: "rgba(255,0,110,0.15)"
 
-  # Font family (loaded from assets/fonts/ when available)
   font_family: "Segoe UI"
   font_size_base: 14

@@ -1,201 +1,85 @@
-# HID Shield - Intelligent USB Security System
+# HID Shield
 
-HID Shield is a Windows-focused PySide6 desktop application for monitoring, analyzing, and controlling USB and HID device activity.
+HID Shield is a Windows desktop security application built with PySide6 for real-time USB/HID monitoring, threat analysis, and operator-controlled policy enforcement.
 
-It is designed as an analyst workflow tool that combines:
-- Live USB detection and eventing
-- Risk scoring and policy enforcement
-- Threat analysis screens and operator decisions
-- Authentication and session control
-- Event history and PDF incident reporting
+The project combines:
+- Live USB event monitoring
+- File and device threat scoring with a LightGBM-based classifier
+- Authentication and session controls
+- Risk-aware decision workflows
+- Persistent SQLite event history and PDF reporting
 
-## Table of Contents
-- System Requirements
-- Quick Start
-- First-Run Authentication
-- How the App Works
-- Architecture Overview
-- Configuration
-- Project Structure
-- Packaging as EXE
-- Troubleshooting
-- Development Notes
-- Security Notes
-- License
+## Features
 
-## System Requirements
+- Real USB mode with WMI-backed event monitoring
+- Hybrid ML pipeline: LightGBM probability model + deterministic safety rules
+- Device-level escalation logic from file-level findings
+- Policy recommendations integrated into classification output
+- Analyst UI for dashboard, live detection, threat analysis, logs, and settings
+- Report generation via PDF export
 
-- OS: Windows 10 or Windows 11
-- Python: 3.11+ (3.14 tested in this repository)
-- RAM: 8 GB minimum
-- Disk: at least 1 GB free for runtime data and build outputs
-- Optional: Administrator rights for device-control paths
+## Requirements
+
+- Windows 10 or Windows 11
+- Python 3.11+
+- Administrator privileges recommended for full real-device enforcement
 
 ## Quick Start
 
-1. Clone the repository.
-2. Open a terminal in the `hid_shield` root.
-3. Install dependencies.
-4. Run the app.
-
-~~~bash
+```bash
 pip install -r requirements.txt
 python main.py
-~~~
+```
 
-## First-Run Authentication
+## Default Access
 
-On first run, the app seeds default bootstrap credentials in local auth storage.
+Bootstrap credentials are seeded for first-run initialization.
 
-Default bootstrap values:
 - Username: `admin`
 - Password: `admin`
 - Security key: `admin`
 
-Important:
-- Change these values immediately for any real environment.
-- Do not use defaults in production or shared environments.
+Change these credentials immediately before real deployment.
 
-## How the App Works
+## ML Pipeline
 
-Typical operator flow:
+Runtime classifier:
+- `ml/lightgbm_classifier.py`
+- Model artifact: `ml/models/hid_shield_model.txt`
 
-1. Launch app and sign in.
-2. USB insertion event appears in Live USB screen.
-3. Scan pipeline runs (simulation-safe by default flow).
-4. Threat Analysis presents risk and file details.
-5. Operator applies decision/policy.
-6. Events and alerts are written to SQLite.
-7. Reports can be exported from Logs and Reports.
+Re-train model locally:
 
-Core screens:
-- Dashboard: high-level posture and recent activity
-- Live USB: detection, progress, device intelligence
-- Threat Analysis: file-level and device-level risk summary
-- Logs and Reports: history, filtering, PDF export
-- Settings: policy, account, notifications, storage
-
-## Architecture Overview
-
-~~~text
-UI Layer (PySide6)
-  -> Event Bus (Qt signals)
-     -> Core monitoring and policy modules
-  -> ML classification pipeline (hybrid LightGBM + safety rules)
-     -> Database repositories (SQLite via SQLAlchemy)
-     -> Reporting/export services
-~~~
-
-Major module responsibilities:
-- `core/`: USB monitoring, device info, event bus, optional lockdown helpers
-- `security/`: auth, session, policy engine, access control, whitelist
-- `ml/`: feature extraction, LightGBM inference, and training utilities
-- `database/`: models, DB bootstrap, repositories
-- `ui/`: screens, styles, custom widgets
-- `reports/`: PDF export pipeline
-
-ML backend notes:
-- Runtime classifier uses `ml/lightgbm_classifier.py` with deterministic safety-rule fusion.
-- Model artifact path: `ml/models/hid_shield_model.txt`.
-- Re-train model locally with:
-
-~~~bash
+```bash
 python ml/train_model.py
-~~~
+```
 
 ## Configuration
 
-Primary configuration file: `config.yaml`
+Primary runtime config is `config.yaml`.
 
-Key groups:
-- `app`: app metadata, default window sizing
-- `simulation_mode`: simulation-safe behavior toggle
-- `policy`: default action, entropy threshold, keystroke limits
-- `database`: database path and SQL echo
-- `logging`: level, rotation, retention
-- `theme`: colors, typography, visual tokens
+Key sections:
+- `app`
+- `policy`
+- `database`
+- `logging`
+- `theme`
 
-Example run-mode switch:
-- Set `simulation_mode: false` in `config.yaml` for production-oriented behavior.
+Production default is real USB mode (`simulation_mode: false`).
 
-## Project Structure
+## Build
 
-Top-level highlights:
-- `main.py`: application entry point
-- `build.spec`: PyInstaller build spec
-- `run_as_admin.bat`: elevated EXE launcher helper
-- `requirements.txt`: pinned dependencies
-- `config.yaml`: runtime settings
-
-UI-related paths:
-- `ui/main_window.py`: app shell and navigation
-- `ui/styles/base.qss`: global stylesheet
-- `ui/usb_detection.py`: live detection screen
-- `ui/threat_analysis.py`: post-scan analysis
-- `ui/logs_screen.py`: logs and PDF operations
-
-## Packaging as EXE
-
-Build command:
-
-~~~bash
+```bash
 pyinstaller build.spec
-~~~
+```
 
-Expected output:
+Output executable:
 - `dist/HID Shield.exe`
 
-Run elevated:
-- Double-click `run_as_admin.bat`
-- Or right-click `dist/HID Shield.exe` and choose Run as administrator
+## Repository Notes
 
-Important GitHub note:
-- Do not commit `dist/` or `build/` artifacts to a normal GitHub repository because large EXE/PKG files can exceed GitHub limits.
-- Publish release binaries via GitHub Releases or Git LFS.
-
-## Troubleshooting
-
-### App starts but UI looks broken
-- Confirm `assets/` exists and is available in project root.
-- Confirm stylesheet loads from `ui/styles/base.qss`.
-
-### EXE build fails on missing Windows modules
-- Ensure dependencies are installed:
-
-~~~bash
-pip install -r requirements.txt
-pip install pywin32 pyinstaller
-~~~
-
-### Push to GitHub rejected for large files
-- Remove build artifacts from commit history.
-- Keep only source files in branch commits.
-- Rebuild locally as needed instead of committing binaries.
-
-## Development Notes
-
-- Default local DB file: `hid_shield.db`
-- Runtime may generate `hid_shield.db-wal` and `hid_shield.db-shm`
-- Python cache folders and build outputs should stay out of source commits
-
-Sandbox hardening updates:
-- `sandbox/sandbox_manager.py` now uses deterministic directory walking with graceful handling of unreadable paths.
-- `sandbox/entropy_analyzer.py` validates `max_bytes` input to prevent invalid sampling requests.
-
-Recommended local smoke test:
-1. Run `python main.py`
-2. Login successfully
-3. Trigger or simulate USB detection
-4. Verify Threat Analysis data rendering
-5. Export a PDF report from Logs and Reports
-
-## Security Notes
-
-- Bootstrap credentials are for initialization convenience only.
-- Replace defaults immediately and treat any generated local auth data as sensitive.
-- Review policy defaults in `config.yaml` before real deployment.
-- Run with least privilege where possible; use elevation only for required enforcement operations.
+- Build artifacts and local runtime files are excluded by `.gitignore`.
+- Do not commit `dist/`, `build/`, local DB files, or virtual environments.
 
 ## License
 
-This repository is currently treated as proprietary/internal unless a formal `LICENSE` file is added.
+Add a `LICENSE` file before publishing publicly.

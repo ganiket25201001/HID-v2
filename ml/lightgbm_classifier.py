@@ -1,4 +1,4 @@
-"""Hybrid LightGBM + rule safety classifier for HID Shield threat inference."""
+"""Hybrid LightGBM classifier used for HID Shield threat inference."""
 
 from __future__ import annotations
 
@@ -32,12 +32,11 @@ class ClassificationResult:
 
 
 class LightGBMClassifier:
-    """Hybrid classifier using deterministic rules + LightGBM probability.
+    """Classify file and device risk using model probability plus rule guards.
 
-    Design:
-    - Rule engine acts as hard safety guardrail and fast deterministic signal.
-    - LightGBM estimates malicious probability from extracted features.
-    - Hybrid score combines both, with escalation logic for high-confidence rules.
+    The model predicts malicious probability from extracted features and a
+    deterministic rule score acts as a safety layer for known high-risk
+    indicators.
     """
 
     _RANK: dict[ThreatLevel, int] = {
@@ -73,22 +72,18 @@ class LightGBMClassifier:
         self._load_or_bootstrap_model(self._model_path)
 
     def classify_features(self, features: Mapping[str, float]) -> ClassificationResult:
-        """Classify one file using hybrid rules + LightGBM probability."""
+        """Classify one file using hybrid model and rule signals."""
         vector = self._to_model_vector(features)
 
-        # Stage 1: deterministic safety rules.
         rule_score, rule_contributions = self._rule_score(features)
         rule_prob = self._bounded(rule_score / 100.0, 0.0, 1.0)
 
-        # Stage 2: probabilistic model.
         model_prob, model_detail = self._predict_probability(vector)
 
-        # Stage 3: hybrid fusion with aggressive weighting toward high-risk signals.
         risk_signal = self._risk_signal(features)
         hybrid_prob = (0.32 * rule_prob) + (0.55 * model_prob) + (0.13 * risk_signal)
         hybrid_prob = self._bounded(hybrid_prob, 0.0, 1.0)
 
-        # Safety escalation for very strong rule evidence.
         if rule_score >= 82.0:
             hybrid_prob = max(hybrid_prob, 0.92)
         elif rule_score >= 66.0:
@@ -115,7 +110,7 @@ class LightGBMClassifier:
         contributions.update(model_detail)
 
         explanation = (
-            f"AGGRESSIVE_DETECTION Threat={level.value} score={final_score:.3f}; "
+            f"Threat={level.value} score={final_score:.3f}; "
             f"model_p={model_prob:.4f}, rule_p={rule_prob:.4f}, hybrid_p={hybrid_prob:.4f}; "
             f"top_signals={top_feature_notes}; likely_family={family_hint}."
         )
@@ -318,7 +313,7 @@ class LightGBMClassifier:
         return [self._coerce_float(features.get(name, 0.0)) for name in self._FEATURE_ORDER]
 
     def _rule_score(self, features: Mapping[str, float]) -> tuple[float, dict[str, float]]:
-        """Rule safety baseline retained from previous deterministic classifier."""
+        """Compute deterministic rule contribution for known suspicious patterns."""
         entropy = self._bounded(features.get("entropy", 0.0), 0.0, 8.0)
         file_size = max(0.0, features.get("file_size", 0.0))
         extension_mismatch = self._binary(features.get("extension_mismatch", 0.0))

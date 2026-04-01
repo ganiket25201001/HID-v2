@@ -1,27 +1,74 @@
-# Python bytecode and cache artifacts
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 
-# Virtual environments
-.venv/
-venv/
+# C extensions
+*.so
+*.pyd
 
-# Test and tool caches
+# Distribution / packaging
+.Python
+build/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+*.egg-info/
+*.egg
+*.spec.bak
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+.coverage
+.coverage.*
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-.coverage
+htmlcov/
+.tox/
+.nox/
 
-# Local runtime database artifacts
-*.db-wal
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# IDE/editor
+.vscode/
+.idea/
+*.code-workspace
+
+# PyInstaller
+*.manifest
+
+# Runtime data
+*.db
 *.db-shm
+*.db-wal
+*.log
 
-# Build artifacts
-dist/
-build/
-*.spec.bak
+# HID Shield generated files
+hid_shield.db
+hid_shield.db-shm
+hid_shield.db-wal
+hid_shield.log
 
-# OS/editor noise
+# OS files
 .DS_Store
 Thumbs.db
+
+# Local env files
+.env
+.env.*

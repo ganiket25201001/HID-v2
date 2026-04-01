@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Mapping
 
-import yaml
 from PySide6.QtCore import QObject, Signal
 
 from core.event_bus import event_bus
@@ -46,10 +44,9 @@ class Classifier(QObject):
             controls classification calls.
         """
         super().__init__()
-        self._simulation_mode = self._is_simulation_mode()
         self._feature_extractor = FeatureExtractor()
         self._backend = LightGBMClassifier()
-        self._policy_engine = PolicyEngine(simulation_mode=self._simulation_mode)
+        self._policy_engine = PolicyEngine(simulation_mode=False)
 
         if auto_subscribe:
             # Automatic integration: every completed scan is immediately classified.
@@ -144,12 +141,6 @@ class Classifier(QObject):
         self._persist_device_risk(device_event_id=device_event_id, result_payload=result_payload)
         self._emit_device_threat_if_needed(result_payload)
         self.device_classified.emit(result_payload)
-
-        print(
-            "[ML] Device classified "
-            f"event_id={device_event_id} level={result_payload['device_level']} "
-            f"risk={result_payload['risk_level']}"
-        )
         return result_payload
 
     # ------------------------------------------------------------------
@@ -161,7 +152,7 @@ class Classifier(QObject):
         try:
             self.classify_device(device_event_id=int(device_event_id), scan_summary=summary)
         except Exception as exc:  # pragma: no cover - defensive runtime guard
-            print(f"[ML] Classification failed for event #{device_event_id}: {exc}")
+            event_bus.error_occurred.emit(f"ML classification failed for event #{device_event_id}: {exc}")
 
     # ------------------------------------------------------------------
     # Repository / policy integration
@@ -210,7 +201,7 @@ class Classifier(QObject):
                     severity=(AlertSeverity.CRITICAL.value if threat_level == ThreatLevel.CRITICAL.value else AlertSeverity.WARNING.value),
                     category="file_scan",
                     device_event_id=int(device_event_id),
-                    is_simulated=self._simulation_mode,
+                    is_simulated=False,
                     source="ml.classifier",
                 )
 
@@ -243,7 +234,7 @@ class Classifier(QObject):
             keystroke_rate=None,
             malicious_file_count=malicious_count,
             total_file_count=len(file_classifications),
-            is_simulated=self._simulation_mode,
+            is_simulated=False,
         )
 
         evaluated = self._policy_engine.evaluate(snapshot)
@@ -301,18 +292,3 @@ class Classifier(QObject):
             return None
         text = str(value).strip()
         return text if text else None
-
-    def _is_simulation_mode(self) -> bool:
-        """Resolve simulation mode via environment variable and config fallback."""
-        env_value = os.getenv("HID_SHIELD_SIMULATION_MODE", "").strip().lower()
-        if env_value in {"1", "true", "yes"}:
-            return True
-        if env_value in {"0", "false", "no"}:
-            return False
-
-        config_path = Path(__file__).resolve().parent.parent / "config.yaml"
-        if config_path.exists():
-            with config_path.open("r", encoding="utf-8") as stream:
-                config = yaml.safe_load(stream) or {}
-                return bool(config.get("simulation_mode", True))
-        return True
