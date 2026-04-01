@@ -39,6 +39,7 @@ from core.usb_monitor import USBEventEmitter
 from core.event_bus import event_bus
 from ui.dashboard import DashboardScreen
 from ui.decision_panel import DecisionPanel
+from ui.login_dialog import LoginDialog
 from ui.logs_screen import LogsScreen
 from ui.settings_screen import SettingsScreen
 from ui.styles.theme import Theme, build_stylesheet, load_fonts
@@ -139,6 +140,9 @@ class HIDShieldMainWindow(QMainWindow):
         event_bus.usb_device_inserted.connect(self._on_usb_inserted)
         event_bus.usb_device_inserted.connect(self._show_live_usb_screen)
         event_bus.scan_completed.connect(self._show_threat_analysis_screen)
+
+        # Enforce authentication gate before normal operation begins.
+        QTimer.singleShot(0, self._ensure_authenticated)
 
     # -----------------------------------------------------------------------
     # Component Builders
@@ -285,6 +289,29 @@ class HIDShieldMainWindow(QMainWindow):
     def _show_threat_analysis_screen(self, _event_id: int, _summary: dict[str, Any]) -> None:
         """Bring the Threat Analysis screen into view after scan completion."""
         self._nav_clicked(2)
+
+    def _ensure_authenticated(self) -> None:
+        """Display blocking login dialog when no user session is active."""
+        from security.session_manager import SessionManager
+
+        session_manager = SessionManager.instance()
+        if session_manager.is_authenticated():
+            return
+
+        access_controller = getattr(self, "_access_controller", None)
+        dialog = LoginDialog(access_controller=access_controller, parent=self)
+        dialog.login_success.connect(self._on_login_success)
+
+        result = dialog.exec()
+        if result == 0 or not session_manager.is_authenticated():
+            self.close()
+
+    def _on_login_success(self, payload: dict[str, Any]) -> None:
+        """Handle post-login hooks, including optional key-based unlock."""
+        security_key = str(payload.get("security_key", "") or "").strip()
+        access_controller = getattr(self, "_access_controller", None)
+        if security_key and access_controller is not None:
+            access_controller.unlock_all_ports_with_key(security_key)
 
     def set_usb_monitor(self, monitor: USBEventEmitter) -> None:
         """Attach running USB monitor so settings can restart it safely."""

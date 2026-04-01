@@ -167,3 +167,55 @@ Recommended smoke flow:
 This repository is currently distributed as proprietary/internal software unless replaced by a formal open-source license file.
 
 If you intend public release, add a dedicated LICENSE file and update this section accordingly.
+
+## Packaging for Production (Single EXE)
+
+Build target:
+- Windows single-file executable: HID Shield.exe
+- UAC elevation requested automatically on launch
+- GUI mode (no console window)
+
+### 1) Install packager
+
+~~~bash
+pip install pyinstaller
+~~~
+
+### 2) Build executable
+
+~~~bash
+pyinstaller build.spec
+~~~
+
+Expected artifact:
+- dist/HID Shield.exe
+
+### 3) Run as Administrator
+
+Option A:
+- Double-click run_as_admin.bat
+
+Option B:
+- Right-click dist/HID Shield.exe and choose Run as administrator
+
+### 4) Included runtime assets
+
+The build.spec bundles:
+- assets/ (including assets/fonts/)
+- PySide6 runtime modules
+- reportlab data files
+- SQLAlchemy/reporting submodules and Windows USB dependencies (WMI/pywin32 hidden imports)
+
+### 5) Final pendrive verification flow
+
+1. Launch HID Shield.exe as Administrator.
+2. Login with admin / admin.
+3. Insert real pendrive.
+4. Confirm Live USB detection, Dashboard live updates, and Threat Analysis hierarchy.
+5. Verify Logs tab actions:
+  - Apply Date Filter
+  - Clear Old Logs
+  - Export PDF
+6. Enter security key "admin" and confirm immediate unlock action.
+
+If any module import is missing in the packaged build, add it to hiddenimports in build.spec and rebuild.

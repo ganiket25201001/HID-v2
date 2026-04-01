@@ -134,6 +134,13 @@ class AuthManager:
     _KEY_PIN_HASH: str = "pin_hash"
     _KEY_MASTER_HASH: str = "master_password_hash"
     _KEY_FIRST_RUN: str = "first_run_complete"
+    _KEY_USERNAME: str = "username"
+    _KEY_PASSWORD_HASH: str = "password_hash"
+    _KEY_SECURITY_KEY_HASH: str = "security_key_hash"
+
+    _DEFAULT_ADMIN_USERNAME: str = "admin"
+    _DEFAULT_ADMIN_PASSWORD: str = "admin"
+    _DEFAULT_SECURITY_KEY: str = "admin"
 
     def __init__(
         self,
@@ -165,9 +172,9 @@ class AuthManager:
         self._failed_attempts: int = 0
         self._lockout_until: float = 0.0   # epoch seconds
 
-        # Seed dev PIN in simulation mode if this is a first run
-        if self.simulation_mode and self.is_first_run():
-            self._seed_simulation_pin()
+        # Ensure first-run bootstrap credentials always exist.
+        if self.is_first_run():
+            self.create_default_admin()
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -281,14 +288,90 @@ class AuthManager:
     # ------------------------------------------------------------------
 
     def is_first_run(self) -> bool:
-        """Return ``True`` if no PIN has been configured yet.
+        """Return ``True`` if core auth credentials are not initialized.
 
         Returns
         -------
         bool
-            ``True`` on first run (no PIN hash stored); ``False`` otherwise.
+            ``True`` when username/password/security-key records are missing.
         """
-        return self._get_value(self._KEY_PIN_HASH) is None
+        username = self._get_value(self._KEY_USERNAME)
+        password_hash = self._get_value(self._KEY_PASSWORD_HASH)
+        security_key_hash = self._get_value(self._KEY_SECURITY_KEY_HASH)
+        return not (username and password_hash and security_key_hash)
+
+    def create_default_admin(self) -> None:
+        """Create default first-run administrator and security key records."""
+        self._set_value(self._KEY_USERNAME, self._DEFAULT_ADMIN_USERNAME)
+
+        password_hash = self._hash_secret(self._DEFAULT_ADMIN_PASSWORD)
+        self._set_value(self._KEY_PASSWORD_HASH, password_hash)
+        # Keep legacy key populated so old recovery paths remain valid.
+        self._set_value(self._KEY_MASTER_HASH, password_hash)
+
+        security_hash = self._hash_secret(self._DEFAULT_SECURITY_KEY)
+        self._set_value(self._KEY_SECURITY_KEY_HASH, security_hash)
+
+        if self._get_value(self._KEY_PIN_HASH) is None:
+            self.set_new_pin(_SIM_DEV_PIN)
+        else:
+            self._set_value(self._KEY_FIRST_RUN, "true")
+
+        print("[AUTH] First-run bootstrap complete: default admin credentials created.")
+
+    def sign_up(self, username: str, password: str, pin: str | None = None) -> bool:
+        """Register or update primary credentials for the single local operator."""
+        username_clean = username.strip()
+        password_clean = password.strip()
+
+        if not username_clean or not password_clean:
+            raise ValueError("Username and password are required.")
+
+        self._set_value(self._KEY_USERNAME, username_clean)
+        password_hash = self._hash_secret(password_clean)
+        self._set_value(self._KEY_PASSWORD_HASH, password_hash)
+        self._set_value(self._KEY_MASTER_HASH, password_hash)
+
+        if pin is not None and pin.strip():
+            self.set_new_pin(pin.strip())
+        else:
+            self._set_value(self._KEY_FIRST_RUN, "true")
+
+        self._record_success()
+        print(f"[AUTH] Signup/update completed for user '{username_clean}'.")
+        return True
+
+    def verify_credentials(self, username: str, password: str) -> bool:
+        """Verify username/password credentials against stored bcrypt hashes."""
+        if self._is_locked_out():
+            remaining: float = max(0.0, self._lockout_until - time.monotonic())
+            raise PermissionError(
+                f"Account locked. Try again in {remaining:.0f} seconds."
+            )
+
+        stored_user = self._get_value(self._KEY_USERNAME)
+        stored_hash = self._get_value(self._KEY_PASSWORD_HASH)
+
+        if not stored_user or not stored_hash:
+            self._record_failure()
+            return False
+
+        username_ok = username.strip().lower() == stored_user.strip().lower()
+        password_ok = self._verify_secret(password, stored_hash)
+
+        if username_ok and password_ok:
+            self._record_success()
+            return True
+
+        self._record_failure()
+        return False
+
+    def verify_security_key(self, key: str) -> bool:
+        """Verify a security key string against stored bcrypt hash."""
+        stored_hash = self._get_value(self._KEY_SECURITY_KEY_HASH)
+        if not stored_hash:
+            return False
+        return self._verify_secret(key, stored_hash)
 
     def set_new_pin(self, pin: str) -> None:
         """Persist a new bcrypt-hashed PIN.
@@ -401,7 +484,10 @@ class AuthManager:
                 f"Account locked. Try again in {remaining:.0f} seconds."
             )
 
-        stored_hash: Optional[str] = self._get_value(self._KEY_MASTER_HASH)
+        stored_hash: Optional[str] = (
+            self._get_value(self._KEY_PASSWORD_HASH)
+            or self._get_value(self._KEY_MASTER_HASH)
+        )
         if stored_hash is None:
             self._record_failure()
             return False

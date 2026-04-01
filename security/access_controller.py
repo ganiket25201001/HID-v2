@@ -13,10 +13,12 @@ import yaml
 from PySide6.QtCore import QObject, Signal
 
 from core.event_bus import event_bus
+from core.port_lockdown import PortLockdown
 from database.db import get_db
 from database.models import AlertCategory, AlertSeverity, DeviceEvent, PolicyAction, RiskLevel
 from database.repository import AlertRepository, DeviceRepository, UserActionRepository
 from ml.classifier import Classifier
+from security.auth_manager import AuthManager
 from security.policy_engine import DeviceSnapshot, PolicyEngine
 from security.session_manager import SessionManager, UserMode
 from security.whitelist_manager import WhitelistManager
@@ -64,6 +66,8 @@ class AccessController(QObject):
 
         self._classifier = Classifier(auto_subscribe=False)
         self._policy_engine = PolicyEngine(simulation_mode=self._simulation_mode)
+        self._auth_manager = AuthManager()
+        self._port_lockdown = PortLockdown()
         self._session_manager = SessionManager.instance()
         self._whitelist_manager = WhitelistManager()
 
@@ -151,6 +155,42 @@ class AccessController(QObject):
             lambda: self._execute_manual_mode(AccessMode.GRANT_FULL_ACCESS, panel)
         )
         return True
+
+    def unlock_all_ports_with_key(self, security_key: str) -> bool:
+        """Unlock all USB storage ports when a valid security key is provided."""
+        key = security_key.strip()
+        if not key:
+            print("[ACCESS] Security key unlock rejected: empty key.")
+            return False
+
+        if not self._auth_manager.verify_security_key(key):
+            print("[ACCESS] Security key unlock rejected: invalid key.")
+            return False
+
+        unlocked = False
+        if hasattr(self._port_lockdown, "unlock_all_ports"):
+            unlocked = bool(getattr(self._port_lockdown, "unlock_all_ports")())
+        else:
+            unlocked = bool(self._port_lockdown.unlock_all_usb_storage())
+
+        if unlocked:
+            with get_db() as session:
+                AlertRepository.create_alert(
+                    session,
+                    title="Security key global unlock executed",
+                    message="All USB ports were unlocked using the security key.",
+                    severity=AlertSeverity.INFO.value,
+                    category=AlertCategory.POLICY.value,
+                    device_event_id=None,
+                    is_simulated=self._simulation_mode,
+                    source="security.access_controller",
+                )
+
+            print("[ACCESS] Security key unlock executed: all USB ports unlocked.")
+            return True
+
+        print("[ACCESS] Security key accepted, but USB unlock operation failed.")
+        return False
 
     # ------------------------------------------------------------------
     # Scan-event integration
