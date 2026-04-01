@@ -162,6 +162,31 @@ class FeatureExtractor:
         """Build named feature dictionary for scoring and diagnostics."""
         return self.extract(scan_result=scan_result, device_context=device_context).to_dict()
 
+    def build_model_vector(
+        self,
+        scan_result: Any,
+        device_context: Mapping[str, Any] | None = None,
+    ) -> list[float]:
+        """Return model-ready vector (alias for probability model compatibility)."""
+        return self.build_feature_vector(scan_result=scan_result, device_context=device_context)
+
+    def build_probability_payload(
+        self,
+        scan_result: Any,
+        device_context: Mapping[str, Any] | None = None,
+    ) -> dict[str, object]:
+        """Return payload used by probabilistic classifiers.
+
+        Includes ordered names and values so gradient-boosting models can map
+        consistent feature positions to human-readable explanations.
+        """
+        vector = self.build_model_vector(scan_result=scan_result, device_context=device_context)
+        return {
+            "feature_order": list(self.FEATURE_ORDER),
+            "feature_vector": vector,
+            "feature_dict": dict(zip(self.FEATURE_ORDER, vector)),
+        }
+
     def _extension_mismatch_score(self, suffix: str, mime_type: str) -> float:
         """Compute extension vs MIME mismatch indicator (0 or 1)."""
         if not mime_type:

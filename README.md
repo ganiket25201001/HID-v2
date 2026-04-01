@@ -81,7 +81,7 @@ Core screens:
 UI Layer (PySide6)
   -> Event Bus (Qt signals)
      -> Core monitoring and policy modules
-     -> ML classification pipeline (deterministic mock backend)
+  -> ML classification pipeline (hybrid LightGBM + safety rules)
      -> Database repositories (SQLite via SQLAlchemy)
      -> Reporting/export services
 ~~~
@@ -89,10 +89,19 @@ UI Layer (PySide6)
 Major module responsibilities:
 - `core/`: USB monitoring, device info, event bus, optional lockdown helpers
 - `security/`: auth, session, policy engine, access control, whitelist
-- `ml/`: feature extraction and classifier orchestration
+- `ml/`: feature extraction, LightGBM inference, and training utilities
 - `database/`: models, DB bootstrap, repositories
 - `ui/`: screens, styles, custom widgets
 - `reports/`: PDF export pipeline
+
+ML backend notes:
+- Runtime classifier uses `ml/lightgbm_classifier.py` with deterministic safety-rule fusion.
+- Model artifact path: `ml/models/hid_shield_model.txt`.
+- Re-train model locally with:
+
+~~~bash
+python ml/train_model.py
+~~~
 
 ## Configuration
 
@@ -172,12 +181,6 @@ pip install pywin32 pyinstaller
 Sandbox hardening updates:
 - `sandbox/sandbox_manager.py` now uses deterministic directory walking with graceful handling of unreadable paths.
 - `sandbox/entropy_analyzer.py` validates `max_bytes` input to prevent invalid sampling requests.
-
-Sandbox test command:
-
-~~~bash
-python -m unittest discover -s tests -p "test_sandbox*.py" -v
-~~~
 
 Recommended local smoke test:
 1. Run `python main.py`

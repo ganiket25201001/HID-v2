@@ -14,14 +14,14 @@ from database.db import get_db
 from database.models import AlertSeverity, DeviceEvent, RiskLevel
 from database.repository import AlertRepository, FileScanRepository
 from ml.feature_extractor import FeatureExtractor
-from ml.mock_classifier import MockClassifier, ThreatLevel
+from ml.lightgbm_classifier import LightGBMClassifier, ThreatLevel
 from security.policy_engine import DeviceSnapshot, PolicyEngine
 
 
 class Classifier(QObject):
     """Classify file and device threats and integrate with scan event pipeline.
 
-    In simulation mode this class always uses deterministic `MockClassifier`.
+    Uses a hybrid LightGBM + rules backend for file and device inference.
     It listens to `event_bus.scan_completed` and classifies scans automatically.
     """
 
@@ -48,7 +48,7 @@ class Classifier(QObject):
         super().__init__()
         self._simulation_mode = self._is_simulation_mode()
         self._feature_extractor = FeatureExtractor()
-        self._backend = MockClassifier()
+        self._backend = LightGBMClassifier()
         self._policy_engine = PolicyEngine(simulation_mode=self._simulation_mode)
 
         if auto_subscribe:
@@ -70,7 +70,10 @@ class Classifier(QObject):
         payload = {
             "level": result.level.value,
             "score": result.score,
+            "confidence": float(result.confidence),
+            "confidence_pct": round(float(result.confidence) * 100.0, 2),
             "explanation": result.explanation,
+            "aggressive_mode": True,
             "feature_vector": features,
             "contributions": result.contributions,
             "risk_level": self._THREAT_TO_RISK[result.level],
@@ -87,7 +90,10 @@ class Classifier(QObject):
                     "threat_level": result.level.value,
                     "risk_level": payload["risk_level"],
                     "score": result.score,
+                    "confidence": float(result.confidence),
+                    "confidence_pct": round(float(result.confidence) * 100.0, 2),
                     "explanation": result.explanation,
+                    "aggressive_mode": True,
                 }
             )
 

@@ -28,3 +28,6 @@ pyinstaller==6.12.0              # Single-file executable builder
 # --- Utilities ---
 loguru==0.7.3                    # Structured, colourful logging
 reportlab==4.2.5                 # PDF report generation
+
+# --- Machine Learning ---
+lightgbm==4.6.0                  # Gradient boosting model for threat scoring
