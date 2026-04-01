@@ -169,6 +169,16 @@ pip install pywin32 pyinstaller
 - Runtime may generate `hid_shield.db-wal` and `hid_shield.db-shm`
 - Python cache folders and build outputs should stay out of source commits
 
+Sandbox hardening updates:
+- `sandbox/sandbox_manager.py` now uses deterministic directory walking with graceful handling of unreadable paths.
+- `sandbox/entropy_analyzer.py` validates `max_bytes` input to prevent invalid sampling requests.
+
+Sandbox test command:
+
+~~~bash
+python -m unittest discover -s tests -p "test_sandbox*.py" -v
+~~~
+
 Recommended local smoke test:
 1. Run `python main.py`
 2. Login successfully

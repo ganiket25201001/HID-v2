@@ -116,14 +116,23 @@ class SandboxManager:
             return []
 
         discovered: list[Path] = []
-        for file_path in mount_root.rglob("*"):
-            if len(discovered) >= max_files:
-                break
-            if not file_path.is_file():
-                continue
-            if self._is_ignored_path(file_path):
-                continue
-            discovered.append(file_path)
+
+        def _on_walk_error(_: OSError) -> None:
+            # Ignore unreadable directories and continue with remaining paths.
+            return
+
+        for root, dirs, files in os.walk(mount_root, onerror=_on_walk_error):
+            dirs[:] = [d for d in sorted(dirs) if d.lower() not in {"$recycle.bin", "system volume information"}]
+
+            for file_name in sorted(files):
+                if len(discovered) >= max_files:
+                    return discovered
+
+                file_path = Path(root) / file_name
+                if self._is_ignored_path(file_path):
+                    continue
+                discovered.append(file_path)
+
         return discovered
 
     def cleanup_session(self, session_id: str) -> bool:
