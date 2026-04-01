@@ -68,6 +68,13 @@ class ShannonEntropyAnalyzer:
         dict[str, object]
             Entropy metadata with read status details.
         """
+        if max_bytes <= 0:
+            return {
+                "entropy": 0.0,
+                "classification": "unreadable",
+                "explanation": "Invalid sampling size: max_bytes must be positive.",
+            }
+
         try:
             with file_path.open("rb") as stream:
                 sample = stream.read(max_bytes)

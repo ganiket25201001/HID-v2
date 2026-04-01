@@ -78,6 +78,12 @@ class MockClassifier:
             combo_boost += 10.0
         if entropy >= 7.6 and yara_matches >= 1.0:
             combo_boost += 12.0
+        if is_script and is_hidden and entropy >= 6.8:
+            combo_boost += 9.0
+        if extension_mismatch and (has_pe_header or yara_matches >= 1.0):
+            combo_boost += 7.0
+        if suspicious_imports_count >= 5.0 and yara_matches >= 1.0:
+            combo_boost += 11.0
 
         total_score = sum(contributions.values()) + combo_boost
         total_score = round(self._bounded(total_score, 0.0, 100.0), 3)
