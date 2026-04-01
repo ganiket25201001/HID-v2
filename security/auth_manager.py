@@ -319,18 +319,31 @@ class AuthManager:
 
         print("[AUTH] First-run bootstrap complete: default admin credentials created.")
 
-    def sign_up(self, username: str, password: str, pin: str | None = None) -> bool:
+    def sign_up(
+        self,
+        username: str,
+        password: str,
+        pin: str | None = None,
+        security_key: str | None = None,
+    ) -> bool:
         """Register or update primary credentials for the single local operator."""
         username_clean = username.strip()
         password_clean = password.strip()
+        security_key_clean = (security_key or "").strip()
 
         if not username_clean or not password_clean:
             raise ValueError("Username and password are required.")
+        if security_key is not None and not security_key_clean:
+            raise ValueError("Security key must not be empty.")
 
         self._set_value(self._KEY_USERNAME, username_clean)
         password_hash = self._hash_secret(password_clean)
         self._set_value(self._KEY_PASSWORD_HASH, password_hash)
         self._set_value(self._KEY_MASTER_HASH, password_hash)
+
+        if security_key is not None:
+            security_hash = self._hash_secret(security_key_clean)
+            self._set_value(self._KEY_SECURITY_KEY_HASH, security_hash)
 
         if pin is not None and pin.strip():
             self.set_new_pin(pin.strip())
