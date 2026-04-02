@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
 
@@ -16,7 +16,6 @@ if assets_dir.exists():
     datas.append((str(assets_dir), "assets"))
 
 datas += collect_data_files("reportlab")
-datas += collect_data_files("PySide6")
 
 hiddenimports = [
     # Core runtime
@@ -47,12 +46,6 @@ hiddenimports = [
     "PySide6.QtXml",
 ]
 
-# Collect dynamic submodules for robust production packaging.
-hiddenimports += collect_submodules("sqlalchemy")
-hiddenimports += collect_submodules("reportlab")
-hiddenimports += collect_submodules("PySide6")
-
-
 analysis = Analysis(
     ["main.py"],
     pathex=[str(project_dir)],
@@ -62,7 +55,25 @@ analysis = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        "IPython",
+        "bitsandbytes",
+        "cv2",
+        "jupyter",
+        "jupyterlab",
+        "matplotlib",
+        "notebook",
+        "pandas",
+        "pytest",
+        "sklearn",
+        "tensorboard",
+        "tensorflow",
+        "tkinter",
+        "torch",
+        "torchaudio",
+        "torchvision",
+        "transformers",
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
