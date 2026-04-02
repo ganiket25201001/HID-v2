@@ -1,43 +1,11 @@
-# Byte-compiled / optimized / DLL files
+# Python caches and bytecode
 __pycache__/
 *.py[cod]
 *$py.class
 
-# C extensions
+# Native extensions
 *.so
 *.pyd
-
-# Distribution / packaging
-.Python
-build/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-pip-wheel-metadata/
-*.egg-info/
-*.egg
-*.spec.bak
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-.coverage
-.coverage.*
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-htmlcov/
-.tox/
-.nox/
 
 # Virtual environments
 .venv/
@@ -45,30 +13,48 @@ venv/
 env/
 ENV/
 
-# IDE/editor
+# Build and packaging artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+*.manifest
+*.spec.bak
+
+# Test and lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# IDE/editor settings
 .vscode/
 .idea/
 *.code-workspace
 
-# PyInstaller
-*.manifest
-
-# Runtime data
+# Runtime artifacts
+*.log
 *.db
 *.db-shm
 *.db-wal
-*.log
-
-# HID Shield generated files
+hid_shield.log
 hid_shield.db
 hid_shield.db-shm
 hid_shield.db-wal
-hid_shield.log
+
+# Installer output artifacts
+installer/package/
+installer/*.zip
+
+# Environment files
+.env
+.env.*
 
 # OS files
 .DS_Store
 Thumbs.db
-
-# Local env files
-.env
-.env.*

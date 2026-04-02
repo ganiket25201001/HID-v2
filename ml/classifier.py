@@ -17,11 +17,7 @@ from security.policy_engine import DeviceSnapshot, PolicyEngine
 
 
 class Classifier(QObject):
-    """Classify file and device threats and integrate with scan event pipeline.
-
-    Uses a hybrid LightGBM + rules backend for file and device inference.
-    It listens to `event_bus.scan_completed` and classifies scans automatically.
-    """
+    """Classify file and device threats and integrate with scan event pipeline."""
 
     file_classified = Signal(dict)
     device_classified = Signal(dict)
@@ -34,22 +30,12 @@ class Classifier(QObject):
     }
 
     def __init__(self, auto_subscribe: bool = True) -> None:
-        """Initialize classifiers, feature extractor, and optional event hooks.
-
-        Parameters
-        ----------
-        auto_subscribe:
-            When True, subscribes to ``event_bus.scan_completed`` and classifies
-            scans automatically. Set False when another orchestrator already
-            controls classification calls.
-        """
         super().__init__()
         self._feature_extractor = FeatureExtractor()
         self._backend = LightGBMClassifier()
-        self._policy_engine = PolicyEngine(simulation_mode=False)
+        self._policy_engine = PolicyEngine()
 
         if auto_subscribe:
-            # Automatic integration: every completed scan is immediately classified.
             event_bus.scan_completed.connect(self._on_scan_completed)
 
     def classify_file(
@@ -70,7 +56,6 @@ class Classifier(QObject):
             "confidence": float(result.confidence),
             "confidence_pct": round(float(result.confidence) * 100.0, 2),
             "explanation": result.explanation,
-            "aggressive_mode": True,
             "feature_vector": features,
             "contributions": result.contributions,
             "risk_level": self._THREAT_TO_RISK[result.level],
@@ -90,7 +75,6 @@ class Classifier(QObject):
                     "confidence": float(result.confidence),
                     "confidence_pct": round(float(result.confidence) * 100.0, 2),
                     "explanation": result.explanation,
-                    "aggressive_mode": True,
                 }
             )
 
@@ -143,23 +127,15 @@ class Classifier(QObject):
         self.device_classified.emit(result_payload)
         return result_payload
 
-    # ------------------------------------------------------------------
-    # Event wiring
-    # ------------------------------------------------------------------
-
     def _on_scan_completed(self, device_event_id: int, summary: dict[str, Any]) -> None:
         """Auto-classify every completed scan emitted by FileScanner."""
         try:
             self.classify_device(device_event_id=int(device_event_id), scan_summary=summary)
-        except Exception as exc:  # pragma: no cover - defensive runtime guard
+        except Exception as exc:  # pragma: no cover
             event_bus.error_occurred.emit(f"ML classification failed for event #{device_event_id}: {exc}")
 
-    # ------------------------------------------------------------------
-    # Repository / policy integration
-    # ------------------------------------------------------------------
-
     def _load_rows_from_repository(self, device_event_id: int) -> list[dict[str, Any]]:
-        """Load scan results from repository when summary payload has no files."""
+        """Load scan rows from repository when event payload does not include them."""
         with get_db() as session:
             records = FileScanRepository.get_scans_for_event(device_event_id, session=session)
             return [
@@ -261,10 +237,6 @@ class Classifier(QObject):
                 "explanation": str(result_payload.get("explanation", "")),
             }
         )
-
-    # ------------------------------------------------------------------
-    # Small helpers
-    # ------------------------------------------------------------------
 
     def _extract_name(self, scan_result: Mapping[str, Any] | Any) -> str:
         """Get human-readable file name from dict-like or object input."""

@@ -24,7 +24,7 @@ ENV_PATH = BASE_DIR / ".env"
 
 
 def load_config(config_path: Path = CONFIG_PATH) -> dict[str, Any]:
-    """Load YAML config with safe defaults when file is missing."""
+    """Load runtime YAML config with production-safe defaults."""
     if config_path.exists():
         with config_path.open("r", encoding="utf-8") as fh:
             return yaml.safe_load(fh) or {}
@@ -34,7 +34,9 @@ def load_config(config_path: Path = CONFIG_PATH) -> dict[str, Any]:
             "name": "HID Shield",
             "version": "1.0.0",
         },
-        "simulation_mode": False,
+        "policy": {
+            "default_action": "prompt",
+        },
     }
 
 
@@ -48,17 +50,16 @@ def is_admin() -> bool:
         return False
 
 
-def enforce_live_mode(config: dict[str, Any]) -> None:
-    """Force production runtime mode and keep compatibility keys populated."""
+def enforce_live_mode() -> None:
+    """Force production runtime mode for subsystems reading env flags."""
     os.environ["HID_SHIELD_SIMULATION_MODE"] = "false"
-    config["simulation_mode"] = False
 
 
 def main() -> None:
     """Start HID Shield desktop application."""
     load_dotenv(dotenv_path=ENV_PATH)
     config = load_config()
-    enforce_live_mode(config)
+    enforce_live_mode()
 
     init_db()
 

@@ -1,4 +1,4 @@
-"""Hybrid LightGBM classifier used for HID Shield threat inference."""
+"""Production LightGBM classifier used for HID Shield threat inference."""
 
 from __future__ import annotations
 
@@ -7,8 +7,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Iterable, Mapping
 
-from lightgbm import Booster, Dataset, train
-import numpy as np
+from lightgbm import Booster
 
 
 class ThreatLevel(str, Enum):
@@ -32,12 +31,7 @@ class ClassificationResult:
 
 
 class LightGBMClassifier:
-    """Classify file and device risk using model probability plus rule guards.
-
-    The model predicts malicious probability from extracted features and a
-    deterministic rule score acts as a safety layer for known high-risk
-    indicators.
-    """
+    """Classify file and device risk using model probability plus rule guards."""
 
     _RANK: dict[ThreatLevel, int] = {
         ThreatLevel.SAFE: 0,
@@ -68,8 +62,7 @@ class LightGBMClassifier:
     def __init__(self, model_path: Path | None = None) -> None:
         default_model = Path(__file__).resolve().parent / "models" / "hid_shield_model.txt"
         self._model_path = model_path or default_model
-        self._booster: Booster | None = None
-        self._load_or_bootstrap_model(self._model_path)
+        self._booster = self._load_model(self._model_path)
 
     def classify_features(self, features: Mapping[str, float]) -> ClassificationResult:
         """Classify one file using hybrid model and rule signals."""
@@ -176,68 +169,31 @@ class LightGBMClassifier:
             "dangerous_or_higher_count": dangerous_or_higher,
         }
 
-    def _load_or_bootstrap_model(self, model_path: Path) -> None:
-        """Load pre-trained model; fallback to synthetic bootstrap model."""
-        if model_path.exists():
-            try:
-                self._booster = Booster(model_file=str(model_path))
-                return
-            except Exception:
-                self._booster = None
-
-        self._booster = self._train_bootstrap_model()
-
-    def _train_bootstrap_model(self) -> Booster:
-        """Train a tiny synthetic baseline model used when no model file exists."""
-        training_vectors = [
-            [1.5, 2048, 0, 0, 0, 0, 0, 0, 0, 0],
-            [2.2, 4096, 0, 0, 0, 0, 0, 0, 0, 0],
-            [4.8, 150000, 0, 1, 1, 0, 0, 0, 0, 0],
-            [6.7, 300000, 1, 1, 3, 1, 0, 1, 0, 0],
-            [7.9, 2000000, 1, 1, 6, 2, 0, 1, 0, 0],
-            [7.4, 120000, 0, 0, 0, 1, 1, 1, 1, 1],
-            [6.9, 90000, 0, 0, 0, 0, 1, 1, 1, 1],
-            [7.8, 850000, 1, 1, 4, 2, 0, 1, 0, 0],
-            [3.5, 12000, 0, 0, 0, 0, 1, 0, 0, 0],
-            [5.0, 65000, 0, 0, 0, 0, 0, 1, 0, 0],
-        ]
-        labels = [0, 0, 0, 1, 1, 1, 1, 1, 0, 0]
-        dataset = Dataset(
-            np.asarray(training_vectors, dtype=np.float64),
-            label=np.asarray(labels, dtype=np.float64),
-            feature_name=list(self._FEATURE_ORDER),
-        )
-        params = {
-            "objective": "binary",
-            "metric": ["binary_logloss"],
-            "learning_rate": 0.06,
-            "num_leaves": 24,
-            "feature_fraction": 0.9,
-            "bagging_fraction": 0.9,
-            "bagging_freq": 1,
-            "min_data_in_leaf": 1,
-            "seed": 42,
-            "verbose": -1,
-        }
-        return train(params=params, train_set=dataset, num_boost_round=80)
+    def _load_model(self, model_path: Path) -> Booster:
+        """Load production model file and fail fast if missing."""
+        if not model_path.exists():
+            raise FileNotFoundError(
+                f"LightGBM model file not found: {model_path}. "
+                "Run 'python ml/train_model.py' to generate ml/models/hid_shield_model.txt."
+            )
+        return Booster(model_file=str(model_path))
 
     def _predict_probability(self, vector: list[float]) -> tuple[float, dict[str, float]]:
-        """Predict malicious probability with optional contribution details."""
+        """Predict malicious probability with optional feature contribution details."""
         details: dict[str, float] = {}
-        try:
-            if self._booster is not None:
-                raw = self._booster.predict([vector])
-                value = float(raw[0])
+        raw = self._booster.predict([vector])
+        value = float(raw[0])
 
-                contrib = self._booster.predict([vector], pred_contrib=True)
-                if contrib and len(contrib[0]) >= len(self._FEATURE_ORDER):
-                    for idx, name in enumerate(self._FEATURE_ORDER):
-                        details[f"contrib_{name}"] = round(float(contrib[0][idx]), 6)
-                return self._bounded(value, 0.0, 1.0), details
+        try:
+            contrib = self._booster.predict([vector], pred_contrib=True)
+            if contrib and len(contrib[0]) >= len(self._FEATURE_ORDER):
+                for idx, name in enumerate(self._FEATURE_ORDER):
+                    details[f"contrib_{name}"] = round(float(contrib[0][idx]), 6)
         except Exception:
+            # Contribution details are optional and should never block inference.
             pass
 
-        return 0.5, details
+        return self._bounded(value, 0.0, 1.0), details
 
     def _build_feature_explanation(self, features: Mapping[str, float], model_detail: Mapping[str, float]) -> str:
         """Build concise top-signal explanation using model + rule context."""
@@ -247,7 +203,6 @@ class LightGBMClassifier:
             contrib = abs(float(model_detail.get(contrib_key, 0.0)))
             baseline = abs(float(features.get(name, 0.0)))
 
-            # Aggressive weighting: prioritize high-risk indicators.
             risk_weight = 1.0
             if name in {"entropy", "suspicious_imports_count", "yara_matches"}:
                 risk_weight = 1.8

@@ -12,10 +12,6 @@ app:
   min_window_width: 960
   min_window_height: 640
 
-# Keep this key for compatibility with modules that still read it.
-# Production default is always real USB mode.
-simulation_mode: false
-
 # --- Security Policy Defaults ---
 policy:
   # Action taken when an unknown HID device is plugged in.

@@ -1,61 +1,74 @@
 # HID Shield
 
-HID Shield is a Windows desktop security application built with PySide6 for real-time USB/HID monitoring, threat analysis, and operator-controlled policy enforcement.
+HID Shield is a production-focused Windows desktop security platform built with PySide6 for USB/HID monitoring, file threat analysis, operator approval workflows, and controlled access enforcement.
 
-The project combines:
-- Live USB event monitoring
-- File and device threat scoring with a LightGBM-based classifier
-- Authentication and session controls
-- Risk-aware decision workflows
-- Persistent SQLite event history and PDF reporting
+## Core Capabilities
 
-## Features
-
-- Real USB mode with WMI-backed event monitoring
-- Hybrid ML pipeline: LightGBM probability model + deterministic safety rules
-- Device-level escalation logic from file-level findings
-- Policy recommendations integrated into classification output
-- Analyst UI for dashboard, live detection, threat analysis, logs, and settings
-- Report generation via PDF export
+- Real-time USB detection and event lifecycle tracking
+- Hybrid file risk inference with LightGBM plus deterministic rule safeguards
+- Device-level risk escalation from file-level outcomes
+- Approval-gated access decisions before device exposure
+- Security-focused dashboard, threat analysis, and logs/reporting views
+- SQLite-backed event history and PDF report export
 
 ## Requirements
 
 - Windows 10 or Windows 11
 - Python 3.11+
-- Administrator privileges recommended for full real-device enforcement
+- Administrator privileges recommended for full policy enforcement
 
-## Quick Start
+## Installation
 
 ```bash
 pip install -r requirements.txt
+```
+
+## Run (Direct)
+
+```bash
 python main.py
 ```
 
-## Default Access
+## Makefile Usage
 
-Bootstrap credentials are seeded for first-run initialization.
+The project includes a production-ready Makefile with standard development and packaging commands.
 
+```bash
+make install-deps
+make run
+make test
+make build-exe
+make clean
+```
+
+Available targets:
+- `install-deps`: install all Python dependencies from `requirements.txt`
+- `run`: start HID Shield desktop application
+- `test`: execute automated tests with pytest
+- `build-exe`: build distributable executable using `build.spec`
+- `clean`: remove build and cache artifacts
+
+## Build Output
+
+```bash
+pyinstaller build.spec
+```
+
+Generated executable:
+- `dist/HID Shield.exe`
+
+## Default Access (First Run)
+
+Bootstrap credentials are seeded for first initialization:
 - Username: `admin`
 - Password: `admin`
 - Security key: `admin`
 
-Change these credentials immediately before real deployment.
-
-## ML Pipeline
-
-Runtime classifier:
-- `ml/lightgbm_classifier.py`
-- Model artifact: `ml/models/hid_shield_model.txt`
-
-Re-train model locally:
-
-```bash
-python ml/train_model.py
-```
+Change these credentials immediately for production deployment.
 
 ## Configuration
 
-Primary runtime config is `config.yaml`.
+Primary runtime configuration is stored in `config.yaml`.
 
 Key sections:
 - `app`
@@ -64,21 +77,26 @@ Key sections:
 - `logging`
 - `theme`
 
-Production default is real USB mode (`simulation_mode: false`).
+## ML Model
 
-## Build
+Runtime classifier module:
+- `ml/lightgbm_classifier.py`
+
+Expected model artifact:
+- `ml/models/hid_shield_model.txt`
+
+Train or refresh the model locally:
 
 ```bash
-pyinstaller build.spec
+python ml/train_model.py
 ```
 
-Output executable:
-- `dist/HID Shield.exe`
+## Repository Hygiene
 
-## Repository Notes
-
-- Build artifacts and local runtime files are excluded by `.gitignore`.
-- Do not commit `dist/`, `build/`, local DB files, or virtual environments.
+The repository excludes local and generated artifacts via `.gitignore`, including:
+- `build/`, `dist/`
+- local database/log files
+- virtual environments and editor caches
 
 ## License
 

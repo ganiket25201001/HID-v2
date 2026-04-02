@@ -1,42 +1,15 @@
-"""
-hid_shield.ui.main_window
-=========================
-Primary PySide6 window application shell.
-
-Design
-------
-* Centralised `HIDShieldMainWindow` class holding the layout structure.
-* Top bar: Logo, Cyberpunk Clock, Operator Badge.
-* Left Sidebar: Navigation buttons (Dashboard, Live USB, Logs, Policies, Settings).
-* Central Area: ``QStackedWidget`` swapping out main views. Uses the custom
-  ``GlassCard`` container for content panelling.
-* Status bar at bottom right handles the SIMULATION_MODE warning indicator.
-* Event Bus Integration: Listens for ``usb_device_inserted`` and shows a transient
-  toast notification containing the device name.
-"""
+"""Primary PySide6 shell for HID Shield."""
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QMainWindow,
-    QPushButton,
-    QSizePolicy,
-    QSpacerItem,
-    QStackedWidget,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMainWindow, QPushButton, QStackedWidget, QVBoxLayout, QWidget
 
-from core.usb_monitor import USBEventEmitter
 from core.event_bus import event_bus
+from core.usb_monitor import USBEventEmitter
 from ui.dashboard import DashboardScreen
 from ui.decision_panel import DecisionPanel
 from ui.login_dialog import LoginDialog
@@ -46,220 +19,158 @@ from ui.styles.theme import Theme, build_stylesheet, load_fonts
 from ui.threat_analysis import ThreatAnalysisScreen
 from ui.usb_detection import LiveUSBDetectionScreen
 from ui.widgets.animated_button import AnimatedButton
-from ui.widgets.glass_card import GlassCard
 
 
 class ToastNotification(QFrame):
-    """Temporary notification pop-up (Toast) sliding in from bottom right."""
+    """Small transient toast for USB/event notifications."""
 
     def __init__(self, parent: QWidget, message: str) -> None:
         super().__init__(parent)
-        self.setObjectName("toastFrame")
-        self.setFixedSize(300, 60)
-        
+        self.setObjectName("toast")
+        self.setFixedSize(360, 74)
+
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 8, 16, 8)
-        
-        icon = QLabel("NOTICE")
-        icon.setStyleSheet(
-            "font-size: 10px; font-weight: 700; letter-spacing: 1px; "
-            f"color: {Theme.ACCENT_CYAN};"
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(10)
+
+        badge = QLabel("LIVE")
+        badge.setStyleSheet(
+            f"font-size: 11px; font-weight: 800; letter-spacing: 1px; color: {Theme.ACCENT_CYAN};"
         )
-        
-        msg = QLabel(message)
-        msg.setStyleSheet("color: " + Theme.TEXT_PRIMARY + "; font-weight: bold;")
-        msg.setWordWrap(True)
-        
-        layout.addWidget(icon)
-        layout.addWidget(msg, stretch=1)
-        
-        self.setStyleSheet(f"""
-            QFrame#toastFrame {{
+
+        txt = QLabel(message)
+        txt.setWordWrap(True)
+        txt.setStyleSheet(f"font-size: 13px; color: {Theme.TEXT_PRIMARY};")
+
+        layout.addWidget(badge)
+        layout.addWidget(txt, stretch=1)
+
+        self.setStyleSheet(
+            f"""
+            QFrame#toast {{
                 background-color: {Theme.BG_TERTIARY};
                 border: 1px solid {Theme.ACCENT_CYAN};
-                border-radius: 8px;
+                border-radius: 10px;
             }}
-        """)
-        
-        # Position at bottom right
-        parent_rect = parent.rect()
-        self.move(parent_rect.width() - self.width() - 24, 
-                  parent_rect.height() - self.height() - 24)
-                  
-        self.timer = QTimer(self)
-        self.timer.setSingleShot(True)
-        self.timer.timeout.connect(self.deleteLater)
-        self.timer.start(4000)  # Show for 4 seconds
+            """
+        )
+
+        prect = parent.rect()
+        self.move(prect.width() - self.width() - 24, prect.height() - self.height() - 24)
+        QTimer.singleShot(3800, self.deleteLater)
 
 
 class HIDShieldMainWindow(QMainWindow):
-    """The master PySide6 window shell for HID Shield.
-    
-    Layout:
-    [ TopBar (Logo + Clock + Admin Badge) ]
-    [ SideBar (Nav) ] | [ Central StackedWidget (GlassCards) ]
-    """
+    """Main application shell with premium sidebar + stacked screens."""
 
     def __init__(self) -> None:
         super().__init__()
 
-        # --- Initialisation ------------------------------------------------
         load_fonts()
         self.setStyleSheet(build_stylesheet())
-        
         self.setWindowTitle("HID Shield")
-        self.resize(1280, 800)
-        self.setMinimumSize(QSize(960, 640))
+        self.resize(1360, 860)
+        self.setMinimumSize(QSize(1040, 700))
 
         self._usb_monitor: USBEventEmitter | None = None
-        
-        # We need a central widget to hold our custom layout grid
+
         self.central_container = QWidget(self)
         self.setCentralWidget(self.central_container)
+        self.root = QVBoxLayout(self.central_container)
+        self.root.setContentsMargins(0, 0, 0, 0)
+        self.root.setSpacing(0)
 
-        self.main_layout = QVBoxLayout(self.central_container)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
-        self.main_layout.setSpacing(0)
-
-        # --- Build UI Regions ----------------------------------------------
         self._build_top_bar()
-        
-        # Horizontal split: Sidebar (left) + Stacked content (right)
-        self.h_split_layout = QHBoxLayout()
-        self.h_split_layout.setContentsMargins(0, 0, 0, 0)
-        self.h_split_layout.setSpacing(0)
-        
-        self._build_sidebar()
-        self._build_central_stack()
-        
-        self.main_layout.addLayout(self.h_split_layout, stretch=1)
+        self._build_content_shell()
 
-        # Overlay decision panel remains hidden until scan completion.
         self.decision_panel = DecisionPanel(self.central_container)
         self.decision_panel.hide()
 
-        # --- Subscriptions -------------------------------------------------
-        # Connect to the global event bus to show toast messages when USB devices arrive
-        event_bus.usb_device_inserted.connect(self._on_usb_inserted)
-        event_bus.usb_device_inserted.connect(self._show_live_usb_screen)
-        event_bus.scan_completed.connect(self._show_threat_analysis_screen)
-
-        # Enforce authentication gate before normal operation begins.
+        self._wire_signals()
         QTimer.singleShot(0, self._ensure_authenticated)
 
-    # -----------------------------------------------------------------------
-    # Component Builders
-    # -----------------------------------------------------------------------
-
     def _build_top_bar(self) -> None:
-        self.top_bar = QFrame()
-        self.top_bar.setObjectName("topBar")
-        self.top_bar.setFixedHeight(64)
-        
-        layout = QHBoxLayout(self.top_bar)
+        bar = QFrame(self)
+        bar.setObjectName("topBar")
+        bar.setFixedHeight(72)
+
+        layout = QHBoxLayout(bar)
         layout.setContentsMargins(24, 0, 24, 0)
-        
-        # Logo + Title
-        logo = QLabel("H")
-        logo.setFixedSize(28, 28)
+        layout.setSpacing(12)
+
+        logo = QLabel("HS")
+        logo.setFixedSize(40, 40)
         logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         logo.setStyleSheet(
-            f"font-size: 15px; font-weight: 800; color: {Theme.BG_PRIMARY};"
-            f"background-color: {Theme.ACCENT_CYAN}; border-radius: 14px;"
+            f"font-size: 13px; font-weight: 900; color: {Theme.BG_PRIMARY};"
+            f"background-color: {Theme.ACCENT_CYAN}; border-radius: 20px;"
         )
-        
-        title = QLabel("HID SHIELD")
-        title.setProperty("class", "h1")
-        title.setStyleSheet(
-            f"color: {Theme.ACCENT_CYAN}; letter-spacing: 3px; font-weight: 800;"
-            "font-size: 32px;"
-        )
-        
-        layout.addWidget(logo)
-        layout.addSpacing(12)
-        layout.addWidget(title)
-        
-        layout.addStretch()
-        
-        # Status Badge (SIMULATION MODE indicator)
-        env_sim = os.getenv("HID_SHIELD_SIMULATION_MODE", "false").lower()
-        if env_sim in ("true", "1", "yes"):
-            sim_badge = QLabel("⚡ SIMULATION MODE")
-            sim_badge.setStyleSheet(f"""
-                color: {Theme.ACCENT_GREEN};
-                font-weight: bold;
-                padding: 4px 12px;
-                border: 1px solid {Theme.ACCENT_GREEN};
-                border-radius: 4px;
-                background-color: rgba(0, 255, 136, 0.1);
-            """)
-            layout.addWidget(sim_badge)
-            layout.addSpacing(16)
-        
-        # Profile / Exit
-        exit_btn = AnimatedButton("System Exit", accent_color=Theme.ACCENT_MAGENTA)
-        exit_btn.setFixedSize(120, 36)
-        exit_btn.clicked.connect(self.close)
-        
-        layout.addWidget(exit_btn)
-        
-        self.main_layout.addWidget(self.top_bar)
 
-    def _build_sidebar(self) -> None:
-        self.sidebar = QFrame()
-        self.sidebar.setObjectName("sideBar")
-        self.sidebar.setFixedWidth(240)
-        
-        layout = QVBoxLayout(self.sidebar)
-        layout.setContentsMargins(12, 24, 12, 24)
-        layout.setSpacing(8)
-        
-        nav_items = [
+        title = QLabel("HID SHIELD")
+        title.setStyleSheet(
+            f"font-size: 34px; font-weight: 800; letter-spacing: 3px; color: {Theme.ACCENT_CYAN};"
+        )
+
+        self.live_state = QLabel("REAL-TIME MONITORING")
+        self.live_state.setStyleSheet(
+            f"font-size: 12px; color: {Theme.ACCENT_GREEN}; font-weight: 700;"
+            f"padding: 6px 10px; border: 1px solid {Theme.ACCENT_GREEN}; border-radius: 8px;"
+        )
+
+        quit_btn = AnimatedButton("Exit", accent_color=Theme.ACCENT_MAGENTA)
+        quit_btn.setFixedSize(110, 38)
+        quit_btn.clicked.connect(self.close)
+
+        layout.addWidget(logo)
+        layout.addWidget(title)
+        layout.addStretch(1)
+        layout.addWidget(self.live_state)
+        layout.addWidget(quit_btn)
+
+        self.root.addWidget(bar)
+
+    def _build_content_shell(self) -> None:
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(0)
+
+        self.sidebar = QFrame(self)
+        self.sidebar.setFixedWidth(250)
+        self.sidebar.setStyleSheet(
+            f"background-color: rgba(17, 24, 39, 0.94); border-right: 1px solid {Theme.BORDER};"
+        )
+        side = QVBoxLayout(self.sidebar)
+        side.setContentsMargins(14, 20, 14, 20)
+        side.setSpacing(10)
+
+        nav = [
             ("Dashboard", 0),
             ("Live USB", 1),
             ("Threat Analysis", 2),
             ("Logs & Reports", 3),
             ("Settings", 4),
         ]
-        
         self.nav_buttons: list[QPushButton] = []
-        for text, index in nav_items:
+        for text, idx in nav:
             btn = QPushButton(text)
-            btn.setProperty("class", "nav-button")
             btn.setCheckable(True)
-            if index == 0:
+            btn.setMinimumHeight(46)
+            if idx == 0:
                 btn.setChecked(True)
-            
-            # Use a lambda default arg capture to avoid late-binding loop variable
-            btn.clicked.connect(lambda checked=False, idx=index: self._nav_clicked(idx))
-            
+            btn.clicked.connect(lambda _checked=False, i=idx: self._nav_clicked(i))
             self.nav_buttons.append(btn)
-            layout.addWidget(btn)
-            
-        layout.addStretch()
-        
-        # Version at bottom of sidebar
-        version = QLabel("v1.0.0-beta")
-        version.setStyleSheet(f"color: {Theme.TEXT_DISABLED}; font-size: 12px;")
-        version.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(version)
-        
-        self.h_split_layout.addWidget(self.sidebar)
+            side.addWidget(btn)
 
-    def _build_central_stack(self) -> None:
-        """The main right-hand content area containing stacked views."""
-        
-        # Wrap everything in a standard container with padding
-        content_container = QWidget()
-        self.h_split_layout.addWidget(content_container, stretch=1)
-        
-        cc_layout = QVBoxLayout(content_container)
-        cc_layout.setContentsMargins(32, 32, 32, 32)
-        
-        # The QStackedWidget allows us to swap views by sidebar index
-        self.stack = QStackedWidget()
-        cc_layout.addWidget(self.stack)
+        side.addStretch(1)
+        version = QLabel("HID Shield v1.0.0")
+        version.setStyleSheet(f"font-size: 12px; color: {Theme.TEXT_DISABLED};")
+        side.addWidget(version, alignment=Qt.AlignmentFlag.AlignCenter)
 
+        content = QWidget(self)
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(24, 20, 24, 20)
+
+        self.stack = QStackedWidget(self)
         self.dashboard_screen = DashboardScreen(self)
         self.live_usb_screen = LiveUSBDetectionScreen(parent=self)
         self.threat_analysis_screen = ThreatAnalysisScreen(self)
@@ -272,41 +183,47 @@ class HIDShieldMainWindow(QMainWindow):
         self.stack.addWidget(self.logs_screen)
         self.stack.addWidget(self.settings_screen)
 
-    # -----------------------------------------------------------------------
-    # Signal Handlers
-    # -----------------------------------------------------------------------
+        content_layout.addWidget(self.stack)
 
-    def _nav_clicked(self, index: int) -> None:
-        """Handle sidebar navigation state mapping to the StackedWidget."""
-        for i, btn in enumerate(self.nav_buttons):
-            if i == index:
-                btn.setChecked(True)
-                self.stack.setCurrentIndex(index)
-            else:
-                btn.setChecked(False)
+        body.addWidget(self.sidebar)
+        body.addWidget(content, stretch=1)
+        self.root.addLayout(body, stretch=1)
+
+    def _wire_signals(self) -> None:
+        event_bus.usb_device_inserted.connect(self._on_usb_inserted)
+        event_bus.usb_device_inserted.connect(lambda _p: self._nav_clicked(1))
+        event_bus.scan_completed.connect(self._on_scan_completed)
+        event_bus.threat_detected.connect(self._on_threat_detected)
+        event_bus.logs_refresh_requested.connect(lambda _p: self.logs_screen.refresh_all_tables())
 
     def _on_usb_inserted(self, payload: dict[str, Any]) -> None:
-        """Global bus signal receiver for USB insert events.
-        
-        Spawns a ToastNotification dynamically to alert the user.
-        """
-        device_name = payload.get("device_name", "Unknown USB Device")
-        ToastNotification(self.central_container, f"Device detected:\n{device_name}").show()
+        device_name = str(payload.get("device_name") or "Unknown USB Device")
+        ToastNotification(self.central_container, f"USB detected: {device_name}\nAccess is blocked until approval.").show()
 
-    def _show_live_usb_screen(self, _: dict[str, Any]) -> None:
-        """Bring the Live USB screen into view when a device is inserted."""
-        self._nav_clicked(1)
+        # Request all major panels to refresh context.
+        event_bus.dashboard_refresh_requested.emit({"source": "usb_inserted", "device": payload})
+        event_bus.logs_refresh_requested.emit({"source": "usb_inserted"})
 
-    def _show_threat_analysis_screen(self, _event_id: int, _summary: dict[str, Any]) -> None:
-        """Bring the Threat Analysis screen into view after scan completion."""
+    def _on_scan_completed(self, event_id: int, summary: dict[str, Any]) -> None:
         self._nav_clicked(2)
+        event_bus.dashboard_refresh_requested.emit({"source": "scan_completed", "event_id": event_id})
+        event_bus.logs_refresh_requested.emit({"source": "scan_completed", "event_id": event_id})
+
+    def _on_threat_detected(self, payload: dict[str, Any]) -> None:
+        title = str(payload.get("threat_level") or "THREAT")
+        ToastNotification(self.central_container, f"Threat detected: {title}").show()
+        event_bus.dashboard_refresh_requested.emit({"source": "threat_detected"})
+        event_bus.logs_refresh_requested.emit({"source": "threat_detected"})
+
+    def _nav_clicked(self, index: int) -> None:
+        for i, btn in enumerate(self.nav_buttons):
+            btn.setChecked(i == index)
+        self.stack.setCurrentIndex(index)
 
     def _ensure_authenticated(self) -> None:
-        """Display blocking login dialog when no user session is active."""
         from security.session_manager import SessionManager
 
-        session_manager = SessionManager.instance()
-        if session_manager.is_authenticated():
+        if SessionManager.instance().is_authenticated():
             return
 
         access_controller = getattr(self, "_access_controller", None)
@@ -314,24 +231,21 @@ class HIDShieldMainWindow(QMainWindow):
         dialog.login_success.connect(self._on_login_success)
 
         result = dialog.exec()
-        if result == 0 or not session_manager.is_authenticated():
+        if result == 0 or not SessionManager.instance().is_authenticated():
             self.close()
 
     def _on_login_success(self, payload: dict[str, Any]) -> None:
-        """Handle post-login hooks, including optional key-based unlock."""
         security_key = str(payload.get("security_key", "") or "").strip()
         access_controller = getattr(self, "_access_controller", None)
         if security_key and access_controller is not None:
             access_controller.unlock_all_ports_with_key(security_key)
 
     def set_usb_monitor(self, monitor: USBEventEmitter) -> None:
-        """Attach running USB monitor so settings can restart it safely."""
         self._usb_monitor = monitor
         self.live_usb_screen._usb_emitter = monitor
         self.settings_screen.attach_usb_monitor(monitor)
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        """Stop background monitor thread before window shutdown."""
         if self._usb_monitor is not None:
             self._usb_monitor.stop()
         super().closeEvent(event)

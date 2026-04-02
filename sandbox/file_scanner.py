@@ -80,9 +80,10 @@ class FileScanner(QObject):
         session_id = session.session_id
 
         try:
-            files = self._sandbox_manager.shadow_copy_from_device(
+            source_files = self._sandbox_manager.discover_device_files(device_dict)
+            files = self._sandbox_manager.shadow_copy_files(
                 session_id=session_id,
-                device_payload=device_dict,
+                source_files=source_files,
             )
 
             if not files:
@@ -98,11 +99,16 @@ class FileScanner(QObject):
             all_rows: list[dict[str, Any]] = []
             total_files = len(files)
 
-            for index, file_path in enumerate(files, start=1):
+            for index, (source_path, file_path) in enumerate(zip(source_files, files), start=1):
                 progress = int((index / total_files) * 100)
                 self._emit_progress(progress, f"Analyzing {file_path.name} ({index}/{total_files})")
 
-                row = self._analyze_single_file(file_path=file_path, event_id=event_id, device_dict=device_dict)
+                row = self._analyze_single_file(
+                    file_path=file_path,
+                    source_path=source_path,
+                    event_id=event_id,
+                    device_dict=device_dict,
+                )
                 all_rows.append(row)
                 self.file_scanned.emit(row)
 
@@ -137,6 +143,7 @@ class FileScanner(QObject):
     def _analyze_single_file(
         self,
         file_path: Path,
+        source_path: Path,
         event_id: int,
         device_dict: dict[str, Any],
     ) -> dict[str, Any]:
@@ -171,8 +178,8 @@ class FileScanner(QObject):
         }
 
         row = {
-            "file_path": str(file_path),
-            "file_name": file_path.name,
+            "file_path": str(source_path),
+            "file_name": source_path.name,
             "size": len(file_bytes),
             "mime_type": mime_type,
             "sha256": sha256_hash,
