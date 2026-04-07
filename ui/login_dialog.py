@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QCheckBox,
     QMessageBox,
     QTabWidget,
     QVBoxLayout,
@@ -98,6 +99,10 @@ class LoginDialog(QDialog):
                 login_form.addRow(label, self.login_password_input)
             else:
                 login_form.addRow(label, self.login_security_key_input)
+                
+        self.login_remember_me = QCheckBox("Remember me for 3 days", self)
+        self.login_remember_me.setStyleSheet(f"color: {Theme.TEXT_SECONDARY};")
+        login_form.addRow("", self.login_remember_me)
 
         signup_card = GlassCard(glow=True)
         signup_form = QFormLayout(signup_card)

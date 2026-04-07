@@ -63,6 +63,8 @@ make clean
 
 ```bash
 pyinstaller build.spec
+
+python -m PyInstaller --clean --noconfirm build.spec
 ```
 
 Expected output:

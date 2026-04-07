@@ -462,6 +462,8 @@ class PolicyEngine:
             case "low":
                 return self.default_action
             case "safe":
+                if self.default_action in {ACTION_BLOCK, ACTION_QUARANTINE, ACTION_PROMPT}:
+                    return self.default_action
                 return ACTION_ALLOW
             case _:
                 return self.default_action

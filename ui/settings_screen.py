@@ -132,7 +132,12 @@ class SettingsScreen(QWidget):
         form.setSpacing(10)
 
         self.default_action_combo = QComboBox(self)
-        self.default_action_combo.addItems(["prompt", "allow", "block", "monitor"])
+        self.default_action_combo.addItems([
+            "Scan and Prompt", 
+            "Scan and Allow", 
+            "Scan and Block", 
+            "Scan and Monitor"
+        ])
 
         self.entropy_spin = QDoubleSpinBox(self)
         self.entropy_spin.setRange(0.0, 1.0)
@@ -294,7 +299,14 @@ class SettingsScreen(QWidget):
         db_cfg = self._config.setdefault("database", {})
         app_cfg = self._config.setdefault("app", {})
 
-        self.default_action_combo.setCurrentText(str(policy_cfg.get("default_action", "prompt")))
+        action_val = str(policy_cfg.get("default_action", "prompt")).lower()
+        action_map = {
+            "prompt": "Scan and Prompt",
+            "allow": "Scan and Allow",
+            "block": "Scan and Block",
+            "monitor": "Scan and Monitor"
+        }
+        self.default_action_combo.setCurrentText(action_map.get(action_val, "Scan and Prompt"))
         self.entropy_spin.setValue(float(policy_cfg.get("entropy_threshold", 0.65)))
         self.max_kps_spin.setValue(int(policy_cfg.get("max_keystroke_rate", 80)))
         self.cooldown_spin.setValue(int(policy_cfg.get("cooldown_seconds", 30)))
@@ -332,7 +344,14 @@ class SettingsScreen(QWidget):
         self._config.setdefault("notifications", {})
         self._config.setdefault("logging", {})
 
-        self._config["policy"]["default_action"] = self.default_action_combo.currentText()
+        ui_text = self.default_action_combo.currentText()
+        reverse_map = {
+            "Scan and Prompt": "prompt",
+            "Scan and Allow": "allow",
+            "Scan and Block": "block",
+            "Scan and Monitor": "monitor"
+        }
+        self._config["policy"]["default_action"] = reverse_map.get(ui_text, "prompt")
         self._config["policy"]["entropy_threshold"] = float(self.entropy_spin.value())
         self._config["policy"]["max_keystroke_rate"] = int(self.max_kps_spin.value())
         self._config["policy"]["cooldown_seconds"] = int(self.cooldown_spin.value())

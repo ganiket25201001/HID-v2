@@ -12,8 +12,10 @@ import yaml
 from dotenv import load_dotenv
 from PySide6.QtWidgets import QApplication, QMessageBox
 
+from core.event_bus import event_bus
 from core.usb_monitor import USBEventEmitter
 from database.db import init_db
+from sandbox.file_scanner import FileScanner
 from security.access_controller import AccessController
 from ui.main_window import HIDShieldMainWindow
 from ui.styles.theme import build_stylesheet, load_fonts
@@ -85,6 +87,9 @@ def main() -> None:
 
     window = HIDShieldMainWindow()
     window.set_usb_monitor(usb_monitor)
+
+    file_scanner = FileScanner()
+    event_bus.usb_device_inserted.connect(file_scanner.scan_device)
 
     access_controller = AccessController()
     access_controller.attach_decision_panel(window.decision_panel)

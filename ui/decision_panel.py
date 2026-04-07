@@ -130,8 +130,11 @@ class DecisionPanel(QWidget):
         bottom = QHBoxLayout()
         self.export_report_btn = AnimatedButton("Export Threat Report", accent_color=Theme.ACCENT_CYAN)
         self.export_report_btn.setMinimumHeight(40)
+        self.close_btn = AnimatedButton("Close", accent_color=Theme.TEXT_SECONDARY)
+        self.close_btn.setMinimumHeight(40)
         bottom.addStretch(1)
         bottom.addWidget(self.export_report_btn)
+        bottom.addWidget(self.close_btn)
         shell_layout.addLayout(bottom)
 
         self.status_label = QLabel("Waiting for scan result...")
@@ -159,6 +162,7 @@ class DecisionPanel(QWidget):
         self.block_all_btn.clicked.connect(self._block_all_and_eject)
         self.grant_full_btn.clicked.connect(self._grant_full_access)
         self.export_report_btn.clicked.connect(self._export_threat_report)
+        self.close_btn.clicked.connect(self.hide)
 
         self.file_table.selection_summary_changed.connect(self._on_table_summary_changed)
 

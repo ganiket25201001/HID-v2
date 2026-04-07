@@ -184,7 +184,8 @@ class DashboardScreen(QWidget):
                 continue
             ev = recents[idx]
             ts = ev.timestamp.strftime("%H:%M:%S") if ev.timestamp else "--:--:--"
-            risk = str(ev.risk_level or RiskLevel.LOW.value).upper()
+            risk_val = getattr(ev.risk_level, "value", ev.risk_level) or "low"
+            risk = str(risk_val).upper()
             lbl.setText(f"{ts}  |  {ev.device_name or 'Unknown USB'}  |  {risk}")
 
         if threat_count >= 5:

@@ -165,25 +165,38 @@ class USBEventEmitter(QThread):
         # Fallback if WMI returns an ID shape different from insertion payload.
         event_bus.usb_device_removed.emit({"device_id": removed_id})
 
-    def _resolve_mount_point(self, wmi_conn: Any, pnp_device_id: str) -> str | None:
+    def _resolve_mount_point(self, wmi_conn: Any, pnp_device_id: str, retries: int = 6, delay: float = 0.5) -> str | None:
         """Map a USB PNP ID to a Windows logical drive, if one exists."""
         if not pnp_device_id:
             return None
 
         normalized = pnp_device_id.replace("\\\\", "\\").upper()
-        try:
-            for disk in wmi_conn.Win32_DiskDrive(InterfaceType="USB"):
-                disk_pnp = str(getattr(disk, "PNPDeviceID", "") or "").replace("\\\\", "\\").upper()
-                if normalized not in disk_pnp and disk_pnp not in normalized:
-                    continue
+        removable_drives: list[str] = []
+        
+        for attempt in range(retries):
+            try:
+                for disk in wmi_conn.Win32_DiskDrive():
+                    disk_pnp = str(getattr(disk, "PNPDeviceID", "") or "").replace("\\\\", "\\").upper()
+                    if normalized not in disk_pnp and disk_pnp not in normalized:
+                        continue
 
-                for partition in disk.associators("Win32_DiskDriveToDiskPartition"):
-                    for logical_disk in partition.associators("Win32_LogicalDiskToPartition"):
-                        device_id = str(getattr(logical_disk, "DeviceID", "") or "")
-                        if device_id:
-                            return f"{device_id}\\"
-        except Exception as mount_err:
-            print(f"[USB] Could not resolve mount point: {mount_err}")
+                    for partition in disk.associators("Win32_DiskDriveToDiskPartition"):
+                        for logical_disk in partition.associators("Win32_LogicalDiskToPartition"):
+                            device_id = str(getattr(logical_disk, "DeviceID", "") or "")
+                            if device_id:
+                                return f"{device_id}\\"
+                
+                # Fetch fallback removable drives if deep mapping failed
+                removable_drives = [str(ld.DeviceID) + "\\" for ld in wmi_conn.Win32_LogicalDisk(DriveType=2)]
+            except Exception as mount_err:
+                print(f"[USB] Could not resolve mount point during attempt {attempt+1}: {mount_err}")
+            
+            if attempt < retries - 1:
+                time.sleep(delay)
+
+        # Fallback: if strict mapping failed but exactly one removable drive is connected, safely assume it's the one
+        if len(removable_drives) == 1:
+            return removable_drives[0]
 
         return None
 

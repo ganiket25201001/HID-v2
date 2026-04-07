@@ -66,7 +66,7 @@ class FileScanner(QObject):
             event_id = self._create_initial_device_event(device)
             device_dict = self._device_to_dict(device)
             event_bus.scan_started.emit(event_id)
-            self._emit_progress(0, f"Scan started for event #{event_id} ({device_dict.get('device_name', 'Unknown')})")
+            self._emit_progress(event_id, 0, f"Scan started for event #{event_id} ({device_dict.get('device_name', 'Unknown')})")
             self._executor.submit(self._scan_worker, event_id, device_dict)
             return event_id
 
@@ -101,7 +101,7 @@ class FileScanner(QObject):
 
             for index, (source_path, file_path) in enumerate(zip(source_files, files), start=1):
                 progress = int((index / total_files) * 100)
-                self._emit_progress(progress, f"Analyzing {file_path.name} ({index}/{total_files})")
+                self._emit_progress(event_id, progress, f"Analyzing {file_path.name} ({index}/{total_files})")
 
                 row = self._analyze_single_file(
                     file_path=file_path,
@@ -135,7 +135,7 @@ class FileScanner(QObject):
                 "risk_level": RiskLevel.HIGH.value,
                 "error": str(exc),
             }
-            self._emit_progress(100, f"Scan failed for event #{event_id}: {exc}")
+            self._emit_progress(event_id, 100, f"Scan failed for event #{event_id}: {exc}")
             self._finalize_scan(event_id, error_summary, RiskLevel.HIGH.value, PolicyAction.PROMPT.value)
         finally:
             self._sandbox_manager.cleanup_session(session_id)
@@ -385,7 +385,7 @@ class FileScanner(QObject):
         event_bus.scan_completed.emit(event_id, summary)
         event_bus.policy_action_applied.emit(event_id, action)
         self.scan_finished.emit(event_id, summary)
-        self._emit_progress(100, f"Scan complete for event #{event_id} ({risk_level.upper()})")
+        self._emit_progress(event_id, 100, f"Scan complete for event #{event_id} ({risk_level.upper()})")
 
     def _build_summary(self, device_dict: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
         """Create summary payload compatible with existing UI screens."""
@@ -410,10 +410,11 @@ class FileScanner(QObject):
     # Utility helpers
     # ------------------------------------------------------------------
 
-    def _emit_progress(self, value: int, message: str) -> None:
+    def _emit_progress(self, event_id: int, value: int, message: str) -> None:
         """Emit local signal and console output for interactive test visibility."""
         clamped = max(0, min(100, int(value)))
         self.progress_updated.emit(clamped, message)
+        event_bus.scan_progress.emit(event_id, clamped, message)
         print(f"[SCANNER] {clamped:>3}% | {message}")
 
     def _device_to_dict(self, device: Any) -> dict[str, Any]:

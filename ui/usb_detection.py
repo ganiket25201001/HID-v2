@@ -113,13 +113,20 @@ class LiveUSBDetectionScreen(QWidget):
 
         foot = QHBoxLayout()
         foot.addStretch(1)
+        self.decision_button = AnimatedButton("Make Decision", accent_color=Theme.ACCENT_CYAN)
+        self.decision_button.setFixedSize(170, 40)
+        self.decision_button.setVisible(False)
+        
         self.cancel_button = AnimatedButton("Cancel Scan", accent_color=Theme.ACCENT_MAGENTA)
         self.cancel_button.setFixedSize(170, 40)
+        
+        foot.addWidget(self.decision_button)
         foot.addWidget(self.cancel_button)
         root.addLayout(foot)
 
     def _wire_signals(self) -> None:
         self.cancel_button.clicked.connect(self.cancel_scan)
+        self.decision_button.clicked.connect(self._show_decision_panel)
 
         event_bus.usb_device_inserted.connect(self._on_usb_inserted)
         event_bus.scan_started.connect(self._on_scan_started)
@@ -148,6 +155,8 @@ class LiveUSBDetectionScreen(QWidget):
         self.progress.setValue(5)
         self.file_count.setText("Files inspected: 0")
         self.status.setText("USB detected and isolated. Waiting for scanner...")
+        self.decision_button.setVisible(False)
+        self.cancel_button.setVisible(True)
         self._live_spin = 5
         self._ticker.start()
 
@@ -183,6 +192,13 @@ class LiveUSBDetectionScreen(QWidget):
         self.progress.setValue(100)
         self.pipeline.set_progress(100)
         self.status.setText("Scan completed. USB remains blocked until approval.")
+        
+        self.cancel_button.setVisible(False)
+        self.decision_button.setVisible(True)
+
+    def _show_decision_panel(self) -> None:
+        if self._current_event_id:
+            event_bus.scan_completed.emit(self._current_event_id, {"event_id": self._current_event_id})
 
     def _on_access_state_changed(self, event_id: int, action: str) -> None:
         if self._current_event_id and int(event_id) != self._current_event_id:

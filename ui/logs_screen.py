@@ -142,13 +142,13 @@ class LogsScreen(QWidget):
                     out.append(
                         {
                             "timestamp": ts,
-                            "risk_level": str(event.risk_level or "low").lower(),
+                            "risk_level": str(getattr(event.risk_level, "value", event.risk_level) or "low").lower(),
                             "columns": [
                                 ts.strftime("%Y-%m-%d %H:%M:%S"),
                                 str(event.device_name or "Unknown Device"),
-                                str(event.device_type or "unknown").upper(),
-                                str(event.risk_level or "low").upper(),
-                                str(event.action_taken or "prompt").upper(),
+                                str(getattr(event.device_type, "value", event.device_type) or "unknown").title(),
+                                str(getattr(event.risk_level, "value", event.risk_level) or "low").upper(),
+                                str(getattr(event.action_taken, "value", event.action_taken) or "prompt").title(),
                             ],
                         }
                     )
@@ -171,17 +171,17 @@ class LogsScreen(QWidget):
                     out.append(
                         {
                             "timestamp": ts,
-                            "risk_level": str(r.risk_level or "low").lower(),
+                            "risk_level": str(getattr(r.risk_level, "value", r.risk_level) or "low").lower(),
                             "columns": [
                                 ts.strftime("%Y-%m-%d %H:%M:%S"),
                                 str(r.file_name or "unknown.bin"),
-                                str(r.risk_level or "low").upper(),
+                                str(getattr(r.risk_level, "value", r.risk_level) or "low").upper(),
                                 str(r.threat_name or "-"),
                                 str(r.scan_engine or "HIDShield Engine"),
                             ],
                             "raw": {
                                 "file_size_bytes": int(r.file_size_bytes or 0),
-                                "risk_level": str(r.risk_level or "low").lower(),
+                                "risk_level": str(getattr(r.risk_level, "value", r.risk_level) or "low").lower(),
                                 "threat_name": str(r.threat_name or ""),
                             },
                         }
@@ -206,7 +206,7 @@ class LogsScreen(QWidget):
                             "columns": [
                                 ts.strftime("%Y-%m-%d %H:%M:%S"),
                                 sev.upper(),
-                                str(a.category or "system").upper(),
+                                str(getattr(a.category, "value", a.category) or "system").title(),
                                 str(a.title or "Alert"),
                                 str(a.message or ""),
                             ],

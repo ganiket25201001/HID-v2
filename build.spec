@@ -15,6 +15,14 @@ datas = []
 if assets_dir.exists():
     datas.append((str(assets_dir), "assets"))
 
+ml_models_dir = project_dir / "ml" / "models"
+if ml_models_dir.exists():
+    datas.append((str(ml_models_dir), "ml/models"))
+
+config_file = project_dir / "config.yaml"
+if config_file.exists():
+    datas.append((str(config_file), "."))
+
 datas += collect_data_files("reportlab")
 
 hiddenimports = [

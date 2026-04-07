@@ -17,7 +17,7 @@ from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QWidget
+from PySide6.QtWidgets import QHeaderView, QTableWidget, QTableWidgetItem, QWidget
 
 from ui.styles.theme import Theme
 
@@ -54,6 +54,7 @@ class LogTableWidget(QTableWidget):
         self.verticalHeader().setVisible(False)
         self.setMouseTracking(True)
 
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.itemEntered.connect(self._on_item_entered)
 
         self.setStyleSheet(
