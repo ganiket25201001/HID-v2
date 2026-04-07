@@ -13,7 +13,149 @@ from database.models import AlertSeverity, DeviceEvent, RiskLevel
 from database.repository import AlertRepository, FileScanRepository
 from ml.feature_extractor import FeatureExtractor
 from ml.lightgbm_classifier import LightGBMClassifier, ThreatLevel
+from ml.random_forest_classifier import (
+    RandomForestThreatClassifier,
+    RFThreatLabel,
+)
 from security.policy_engine import DeviceSnapshot, PolicyEngine
+
+
+# ---------------------------------------------------------------------------
+# Ensemble classification engine
+# ---------------------------------------------------------------------------
+
+# Mapping from RF labels → LightGBM ThreatLevel for unified comparison
+_RF_TO_THREAT: dict[RFThreatLabel, ThreatLevel] = {
+    RFThreatLabel.SAFE: ThreatLevel.SAFE,
+    RFThreatLabel.SUSPICIOUS: ThreatLevel.SUSPICIOUS,
+    RFThreatLabel.MALICIOUS: ThreatLevel.CRITICAL,
+}
+
+_THREAT_RANK: dict[ThreatLevel, int] = {
+    ThreatLevel.SAFE: 0,
+    ThreatLevel.SUSPICIOUS: 1,
+    ThreatLevel.DANGEROUS: 2,
+    ThreatLevel.CRITICAL: 3,
+}
+
+
+class EnsembleClassifier:
+    """Run LightGBM + RandomForest in ensemble and merge results.
+
+    Decision rules (per user spec):
+    - Both must agree on SAFE for a file/device to be SAFE.
+    - If they disagree, take the higher risk score as the final result.
+    - If one says MALICIOUS and other says SAFE → classify as SUSPICIOUS.
+    - The minimum classification when models disagree is SUSPICIOUS.
+    """
+
+    def __init__(self) -> None:
+        self._lgbm = LightGBMClassifier()
+        try:
+            self._rf = RandomForestThreatClassifier()
+            self._rf_available = True
+            print("[ENSEMBLE] Both LightGBM and RandomForest models loaded.")
+        except Exception as e:
+            self._rf = None  # type: ignore[assignment]
+            self._rf_available = False
+            print(f"[ENSEMBLE] RandomForest unavailable ({e}), using LightGBM only.")
+
+    def classify_features(
+        self, lgbm_features: Mapping[str, float], rf_features: dict[str, float]
+    ) -> dict[str, Any]:
+        """Run both models and return merged ensemble result.
+
+        Parameters
+        ----------
+        lgbm_features:
+            Feature dict for LightGBM (10-feature vector).
+        rf_features:
+            Feature dict for RandomForest (8-feature vector).
+
+        Returns
+        -------
+        dict
+            Merged result with keys: level, score, confidence, explanation,
+            contributions, lgbm_result, rf_result.
+        """
+        # --- LightGBM ---
+        lgbm_result = self._lgbm.classify_features(lgbm_features)
+        lgbm_level = lgbm_result.level
+        lgbm_score = lgbm_result.score
+
+        # --- RandomForest ---
+        if self._rf_available and self._rf is not None:
+            rf_result = self._rf.classify(rf_features)
+            rf_level = _RF_TO_THREAT.get(rf_result.label, ThreatLevel.SAFE)
+            rf_confidence = rf_result.confidence
+
+            # --- Ensemble merge ---
+            final_level = self._merge_levels(lgbm_level, rf_level)
+            # Score: weighted average of both
+            rf_score_normalized = rf_confidence * 100.0
+            ensemble_score = round((lgbm_score * 0.55) + (rf_score_normalized * 0.45), 3)
+            ensemble_confidence = round((lgbm_result.confidence * 0.55 + rf_confidence * 0.45), 4)
+
+            explanation = (
+                f"ENSEMBLE: final={final_level.value}, score={ensemble_score:.3f}; "
+                f"LightGBM={lgbm_level.value}(s={lgbm_score:.3f}), "
+                f"RandomForest={rf_result.label.value}(c={rf_confidence:.4f}); "
+                f"{lgbm_result.explanation}"
+            )
+
+            return {
+                "level": final_level.value,
+                "score": ensemble_score,
+                "confidence": ensemble_confidence,
+                "explanation": explanation,
+                "contributions": lgbm_result.contributions,
+                "lgbm_level": lgbm_level.value,
+                "lgbm_score": lgbm_score,
+                "rf_level": rf_result.label.value,
+                "rf_confidence": rf_confidence,
+                "rf_probabilities": rf_result.probabilities,
+            }
+        else:
+            # Fallback: LightGBM only
+            return {
+                "level": lgbm_level.value,
+                "score": lgbm_score,
+                "confidence": float(lgbm_result.confidence),
+                "explanation": lgbm_result.explanation,
+                "contributions": lgbm_result.contributions,
+                "lgbm_level": lgbm_level.value,
+                "lgbm_score": lgbm_score,
+                "rf_level": None,
+                "rf_confidence": None,
+                "rf_probabilities": None,
+            }
+
+    def _merge_levels(self, lgbm: ThreatLevel, rf: ThreatLevel) -> ThreatLevel:
+        """Merge two threat levels per the ensemble decision rules.
+
+        - Both SAFE → SAFE
+        - One SAFE, one anything higher → at least SUSPICIOUS
+        - Otherwise → take the higher risk level
+        """
+        lgbm_rank = _THREAT_RANK[lgbm]
+        rf_rank = _THREAT_RANK[rf]
+
+        # Both agree on SAFE
+        if lgbm_rank == 0 and rf_rank == 0:
+            return ThreatLevel.SAFE
+
+        # Disagreement: one is SAFE, other isn't → minimum SUSPICIOUS
+        if lgbm_rank == 0 or rf_rank == 0:
+            higher = max(lgbm_rank, rf_rank)
+            # If one says MALICIOUS/CRITICAL and other says SAFE → SUSPICIOUS
+            return ThreatLevel.SUSPICIOUS if higher >= 2 else ThreatLevel.SUSPICIOUS
+
+        # Both agree on non-SAFE: take the higher risk
+        return lgbm if lgbm_rank >= rf_rank else rf
+
+    def classify_device(self, file_results: list[dict[str, Any]]) -> dict[str, Any]:
+        """Delegate device-level classification to LightGBM backend."""
+        return self._lgbm.classify_device(file_results)
 
 
 class Classifier(QObject):
