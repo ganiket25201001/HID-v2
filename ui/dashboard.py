@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from PySide6.QtCore import QEasingCurve, Qt, QVariantAnimation
@@ -9,8 +10,9 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from core.event_bus import event_bus
 from database.db import get_db
-from database.models import RiskLevel
+from database.models import DeviceEvent, RiskLevel
 from database.repository import DeviceRepository
+from sqlalchemy import func, select
 from ui.styles.theme import Theme
 from ui.widgets.glass_card import GlassCard
 from ui.widgets.particle_background import ParticleBackground
@@ -66,10 +68,12 @@ class DashboardScreen(QWidget):
         self.card_total, self.val_total = self._stat_card("Total Device Events", Theme.ACCENT_CYAN)
         self.card_threats, self.val_threats = self._stat_card("Threat Escalations", Theme.ACCENT_MAGENTA)
         self.card_connected, self.val_connected = self._stat_card("Recently Seen Devices", Theme.ACCENT_GREEN)
+        self.card_blocked_today, self.val_blocked_today = self._stat_card("Threats Blocked Today", Theme.ACCENT_AMBER)
 
         row.addWidget(self.card_total)
         row.addWidget(self.card_threats)
         row.addWidget(self.card_connected)
+        row.addWidget(self.card_blocked_today)
         root.addLayout(row)
 
         bottom = QHBoxLayout()
@@ -102,9 +106,15 @@ class DashboardScreen(QWidget):
         self.risk_gauge = RiskGauge(self)
         self.risk_badge = ThreatBadge("low")
 
+        self.entropy_label = QLabel("Max Entropy: —")
+        self.entropy_label.setStyleSheet(
+            f"font-size: 13px; font-weight: 600; color: {Theme.ACCENT_AMBER}; padding-top: 6px;"
+        )
+
         posture_layout.addWidget(p_title)
         posture_layout.addWidget(self.risk_gauge, alignment=Qt.AlignmentFlag.AlignCenter)
         posture_layout.addWidget(self.risk_badge, alignment=Qt.AlignmentFlag.AlignCenter)
+        posture_layout.addWidget(self.entropy_label, alignment=Qt.AlignmentFlag.AlignCenter)
 
         bottom.addWidget(self.timeline_card, stretch=3)
         bottom.addWidget(self.posture_card, stretch=2)
@@ -147,14 +157,26 @@ class DashboardScreen(QWidget):
                 recents = DeviceRepository.get_recent_events(limit=8, session=session)
                 all_events = DeviceRepository.get_recent_events(limit=5000, session=session)
                 threat_count = DeviceRepository.get_high_risk_count(session=session)
+                blocked_today = self._get_threats_blocked_today(session)
+                max_entropy = self._get_max_entropy_today(session)
         except Exception:
             recents = []
             all_events = []
             threat_count = 0
+            blocked_today = 0
+            max_entropy = 0.0
 
         self.val_total.set_value(len(all_events))
         self.val_threats.set_value(int(threat_count))
         self.val_connected.set_value(len(recents))
+        self.val_blocked_today.set_value(int(blocked_today))
+
+        # Update entropy display
+        if max_entropy > 0:
+            entropy_bits = max_entropy * 8.0 if max_entropy <= 1.0 else max_entropy
+            self.entropy_label.setText(f"Max Entropy: {entropy_bits:.2f} bits")
+        else:
+            self.entropy_label.setText("Max Entropy: —")
 
         for idx, lbl in enumerate(self.timeline_labels):
             if idx >= len(recents):
@@ -175,3 +197,32 @@ class DashboardScreen(QWidget):
             self.risk_badge.set_risk_level("low")
             gauge = 28.0
         self.risk_gauge.set_value(gauge)
+
+    @staticmethod
+    def _get_threats_blocked_today(session: Any) -> int:
+        """Query count of HIGH/CRITICAL risk events from today (UTC)."""
+        today_start = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        stmt = (
+            select(func.count())
+            .select_from(DeviceEvent)
+            .where(
+                DeviceEvent.risk_level.in_([RiskLevel.HIGH.value, RiskLevel.CRITICAL.value]),
+                DeviceEvent.timestamp >= today_start,
+            )
+        )
+        return session.scalar(stmt) or 0
+
+    @staticmethod
+    def _get_max_entropy_today(session: Any) -> float:
+        """Query the maximum entropy score from today's events."""
+        today_start = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        stmt = (
+            select(func.max(DeviceEvent.entropy_score))
+            .where(DeviceEvent.timestamp >= today_start)
+        )
+        result = session.scalar(stmt)
+        return float(result) if result is not None else 0.0

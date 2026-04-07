@@ -89,6 +89,18 @@ class ShannonEntropyAnalyzer:
         result["sampled_bytes"] = len(sample)
         return result
 
+    # Integrated from: Malware-Analysis-Report-Tool — entropy threshold alignment
+    # Spec thresholds: ≥ 7.2 bits = SUSPICIOUS, ≥ 7.8 bits = encrypted/packed
+    ENTROPY_SUSPICIOUS_THRESHOLD: float = 7.2
+    ENTROPY_PACKED_THRESHOLD: float = 7.8
+
+    def is_suspicious(self, entropy: float) -> bool:
+        """Return True when entropy exceeds the configured suspicion threshold.
+
+        Default threshold is 7.2 bits per the HID Shield security specification.
+        """
+        return entropy >= self.ENTROPY_SUSPICIOUS_THRESHOLD
+
     def _classify_entropy(self, entropy: float) -> tuple[str, str]:
         """Map entropy score to a human-readable risk interpretation."""
         if entropy < 4.2:
@@ -101,17 +113,17 @@ class ShannonEntropyAnalyzer:
                 "normal_binary",
                 "Moderate entropy is common in regular executable or binary content.",
             )
-        if entropy < 7.3:
+        if entropy < self.ENTROPY_SUSPICIOUS_THRESHOLD:
             return (
                 "compressed",
                 "High entropy suggests compression or obfuscated binary sections.",
             )
-        if entropy < 7.8:
+        if entropy < self.ENTROPY_PACKED_THRESHOLD:
             return (
                 "packed",
-                "Very high entropy suggests runtime packer usage and possible evasion.",
+                f"Entropy ≥ {self.ENTROPY_SUSPICIOUS_THRESHOLD} — suspicious packer or obfuscation detected.",
             )
         return (
             "encrypted",
-            "Near-maximum entropy strongly indicates encrypted or heavily packed payload.",
+            f"Entropy ≥ {self.ENTROPY_PACKED_THRESHOLD} — strongly indicates encrypted or heavily packed payload.",
         )

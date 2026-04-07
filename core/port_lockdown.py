@@ -148,17 +148,197 @@ class PortLockdown:
             return False
 
     # ------------------------------------------------------------------
-    # Fine-grained Live Wrappers (stubs until pyudev/devcon integration)
+    # Fine-grained Live Device Isolation
+    # Integrated from: USB-Physical-Security — device-level port control
+    # Primary method: DevCon CLI ('devcon disable HWID')
+    # Fallback: WMI Win32_PnPEntity.Disable()
     # ------------------------------------------------------------------
 
     def _disable_device_live(self, device_id: str) -> bool:
-        """Issue OS commands to disable a specific interface (e.g., devcon wrapper)."""
-        print(f"[LOCKDOWN] LIVE: Isolating specific device {device_id} (not via global USBSTOR)...")
-        # In a full C++/WMI/Devcon environment, we'd invoke the Win32 SetupAPI isolate here.
-        # For PySide phase, we'll return True assuming the monitor catches it and the OS blocks driver loading.
-        return True
+        """Disable a specific USB device using DevCon CLI or WMI fallback.
+
+        Parameters
+        ----------
+        device_id:
+            The Hardware ID or DeviceID string (e.g., ``USB\\VID_1234&PID_5678\\...``).
+
+        Returns
+        -------
+        bool
+            ``True`` if the device was successfully disabled.
+        """
+        print(f"[LOCKDOWN] LIVE: Attempting to disable device: {device_id}")
+
+        # --- Attempt 1: DevCon CLI ---
+        if self._devcon_disable(device_id):
+            return True
+
+        # --- Attempt 2: WMI Win32_PnPEntity ---
+        if self._wmi_disable(device_id):
+            return True
+
+        # --- Both methods failed ---
+        print(
+            f"[LOCKDOWN] ERROR: Could not disable device {device_id}. "
+            "Neither DevCon CLI nor WMI method succeeded. "
+            "Ensure DevCon is installed or run with administrator privileges."
+        )
+        return False
 
     def _enable_device_live(self, device_id: str) -> bool:
-        """Issue OS commands to re-enable a specific interface."""
-        print(f"[LOCKDOWN] LIVE: Re-enabling specific device {device_id}...")
-        return True
+        """Re-enable a previously disabled USB device.
+
+        Parameters
+        ----------
+        device_id:
+            The Hardware ID or DeviceID string.
+
+        Returns
+        -------
+        bool
+            ``True`` if the device was successfully re-enabled.
+        """
+        print(f"[LOCKDOWN] LIVE: Attempting to re-enable device: {device_id}")
+
+        # --- Attempt 1: DevCon CLI ---
+        if self._devcon_enable(device_id):
+            return True
+
+        # --- Attempt 2: WMI ---
+        if self._wmi_enable(device_id):
+            return True
+
+        print(
+            f"[LOCKDOWN] ERROR: Could not re-enable device {device_id}. "
+            "Neither DevCon CLI nor WMI method succeeded."
+        )
+        return False
+
+    # ------------------------------------------------------------------
+    # DevCon CLI helpers
+    # Integrated from: USB-Physical-Security — subprocess batch approach
+    # ------------------------------------------------------------------
+
+    def _devcon_disable(self, device_id: str) -> bool:
+        """Disable device via devcon.exe subprocess call."""
+        import shutil
+        import subprocess
+
+        devcon_path = shutil.which("devcon") or shutil.which("devcon.exe")
+        if not devcon_path:
+            print("[LOCKDOWN] DevCon CLI not found on PATH — skipping devcon method.")
+            return False
+
+        try:
+            result = subprocess.run(
+                [devcon_path, "disable", f"@{device_id}"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode == 0:
+                print(f"[LOCKDOWN] DEVCON: Device disabled successfully: {device_id}")
+                return True
+            print(
+                f"[LOCKDOWN] DEVCON: disable returned code {result.returncode}: "
+                f"{result.stdout.strip()} {result.stderr.strip()}"
+            )
+            return False
+        except FileNotFoundError:
+            print("[LOCKDOWN] DEVCON: devcon.exe not found.")
+            return False
+        except subprocess.TimeoutExpired:
+            print("[LOCKDOWN] DEVCON: disable command timed out.")
+            return False
+        except Exception as e:
+            print(f"[LOCKDOWN] DEVCON: Unexpected error — {e}")
+            return False
+
+    def _devcon_enable(self, device_id: str) -> bool:
+        """Enable device via devcon.exe subprocess call."""
+        import shutil
+        import subprocess
+
+        devcon_path = shutil.which("devcon") or shutil.which("devcon.exe")
+        if not devcon_path:
+            return False
+
+        try:
+            result = subprocess.run(
+                [devcon_path, "enable", f"@{device_id}"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            if result.returncode == 0:
+                print(f"[LOCKDOWN] DEVCON: Device enabled successfully: {device_id}")
+                return True
+            return False
+        except Exception:
+            return False
+
+    # ------------------------------------------------------------------
+    # WMI fallback helpers
+    # ------------------------------------------------------------------
+
+    def _wmi_disable(self, device_id: str) -> bool:
+        """Disable device via WMI Win32_PnPEntity.Disable()."""
+        try:
+            import wmi  # type: ignore[import-untyped]
+
+            conn = wmi.WMI()
+            devices = conn.Win32_PnPEntity(DeviceID=device_id)
+            if not devices:
+                # Try partial match on PNPDeviceID
+                devices = [
+                    d for d in conn.Win32_PnPEntity()
+                    if device_id.lower() in str(getattr(d, "DeviceID", "")).lower()
+                ]
+            if not devices:
+                print(f"[LOCKDOWN] WMI: Device not found: {device_id}")
+                return False
+
+            target = devices[0]
+            result = target.Disable()
+            ret_code = result[0] if isinstance(result, (tuple, list)) else result
+            if ret_code == 0:
+                print(f"[LOCKDOWN] WMI: Device disabled: {device_id}")
+                return True
+            print(f"[LOCKDOWN] WMI: Disable returned error code {ret_code}")
+            return False
+        except ImportError:
+            print("[LOCKDOWN] WMI: wmi module not available.")
+            return False
+        except Exception as e:
+            print(f"[LOCKDOWN] WMI: Error disabling device — {e}")
+            return False
+
+    def _wmi_enable(self, device_id: str) -> bool:
+        """Enable device via WMI Win32_PnPEntity.Enable()."""
+        try:
+            import wmi  # type: ignore[import-untyped]
+
+            conn = wmi.WMI()
+            devices = conn.Win32_PnPEntity(DeviceID=device_id)
+            if not devices:
+                devices = [
+                    d for d in conn.Win32_PnPEntity()
+                    if device_id.lower() in str(getattr(d, "DeviceID", "")).lower()
+                ]
+            if not devices:
+                print(f"[LOCKDOWN] WMI: Device not found: {device_id}")
+                return False
+
+            target = devices[0]
+            result = target.Enable()
+            ret_code = result[0] if isinstance(result, (tuple, list)) else result
+            if ret_code == 0:
+                print(f"[LOCKDOWN] WMI: Device enabled: {device_id}")
+                return True
+            print(f"[LOCKDOWN] WMI: Enable returned error code {ret_code}")
+            return False
+        except ImportError:
+            return False
+        except Exception as e:
+            print(f"[LOCKDOWN] WMI: Error enabling device — {e}")
+            return False

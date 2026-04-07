@@ -1,37 +1,49 @@
 # HID Shield
 
-HID Shield is a production-focused Windows desktop security platform built with PySide6 for USB/HID monitoring, file threat analysis, operator approval workflows, and controlled access enforcement.
+HID Shield is a Windows desktop USB/HID security platform built with PySide6. It monitors device insertion in real time, scans mounted content in a sandbox, applies hybrid ML + heuristic risk analysis, and enforces operator-driven access policies.
 
-## Core Capabilities
+## What It Does
 
-- Real-time USB detection and event lifecycle tracking
-- Hybrid file risk inference with LightGBM plus deterministic rule safeguards
-- Device-level risk escalation from file-level outcomes
-- Approval-gated access decisions before device exposure
-- Security-focused dashboard, threat analysis, and logs/reporting views
-- SQLite-backed event history and PDF report export
+- Detects USB/HID insert and removal events through WMI.
+- Scans files from attached media with entropy, PE header, and suspicious import checks.
+- Runs an ensemble threat pipeline (LightGBM + RandomForest).
+- Computes device-level risk from file-level outcomes.
+- Applies policy actions such as allow safe only, manage suspicious files, or block/eject.
+- Stores audit history in SQLite and supports report export.
+
+## Runtime Architecture
+
+1. main.py loads config and environment, initializes DB, and starts the Qt app.
+2. core/usb_monitor.py emits insertion/removal events via core/event_bus.py.
+3. sandbox/file_scanner.py performs staged file analysis in isolated sandbox folders.
+4. ml/classifier.py classifies threats and produces device-level conclusions.
+5. security/access_controller.py and security/policy_engine.py determine enforcement.
+6. ui/main_window.py and related screens render detection, analysis, logs, and decisions.
+
+## Key Modules
+
+- core/: USB monitoring, device abstraction, event signaling, port lockdown logic.
+- sandbox/: file discovery, entropy analysis, PE analysis, HID behavior analysis.
+- ml/: feature extraction, LightGBM classifier, RandomForest classifier, training script.
+- security/: authentication/session handling, policy engine, whitelist and access control.
+- database/: SQLAlchemy models, engine setup, repository layer.
+- ui/: dashboard, USB detection, threat analysis, decision panel, logs, settings.
+- reports/: PDF export.
 
 ## Requirements
 
 - Windows 10 or Windows 11
 - Python 3.11+
-- Administrator privileges recommended for full policy enforcement
+- Administrator privileges recommended for full USB enforcement behavior
 
-## Installation
+## Quick Start
 
 ```bash
 pip install -r requirements.txt
-```
-
-## Run (Direct)
-
-```bash
 python main.py
 ```
 
-## Makefile Usage
-
-The project includes a production-ready Makefile with standard development and packaging commands.
+## Makefile Commands
 
 ```bash
 make install-deps
@@ -41,63 +53,76 @@ make build-exe
 make clean
 ```
 
-Available targets:
-- `install-deps`: install all Python dependencies from `requirements.txt`
-- `run`: start HID Shield desktop application
-- `test`: execute automated tests with pytest
-- `build-exe`: build distributable executable using `build.spec`
-- `clean`: remove build and cache artifacts
+- install-deps: installs dependencies from requirements.txt
+- run: launches the desktop app
+- test: runs pytest in quiet mode
+- build-exe: builds with PyInstaller using build.spec
+- clean: removes build, cache, and common artifact files
 
-## Build Output
+## Build Executable
 
 ```bash
 pyinstaller build.spec
 ```
 
-Generated executable:
-- `dist/HID Shield.exe`
-
-## Default Access (First Run)
-
-Bootstrap credentials are seeded for first initialization:
-- Username: `admin`
-- Password: `admin`
-- Security key: `admin`
-
-Change these credentials immediately for production deployment.
+Expected output:
+- dist/HID Shield.exe
 
 ## Configuration
 
-Primary runtime configuration is stored in `config.yaml`.
+Runtime configuration lives in config.yaml.
 
-Key sections:
-- `app`
-- `policy`
-- `database`
-- `logging`
-- `theme`
+Important sections:
+- app: metadata and window sizing
+- policy: entropy and keystroke thresholds, default action, confidence thresholds
+- database: sqlite path
+- logging: file path and retention settings
+- theme: UI colors and typography
 
-## ML Model
+Note: main.py forces HID_SHIELD_SIMULATION_MODE=false at startup for live mode behavior.
 
-Runtime classifier module:
-- `ml/lightgbm_classifier.py`
+## ML Pipeline
 
-Expected model artifact:
-- `ml/models/hid_shield_model.txt`
+- LightGBM model artifact: ml/models/hid_shield_model.txt
+- RandomForest model artifact: ml/models/rf_threat_model.joblib
+- Ensemble merge logic is implemented in ml/classifier.py
 
-Train or refresh the model locally:
+Retrain model artifacts:
 
 ```bash
 python ml/train_model.py
 ```
 
-## Repository Hygiene
+## Testing
 
-The repository excludes local and generated artifacts via `.gitignore`, including:
-- `build/`, `dist/`
-- local database/log files
-- virtual environments and editor caches
+Test suite is in tests/ and includes:
+- classifier and ensemble behavior
+- entropy analyzer
+- PE analyzer
+- USB monitor flows
+- integration scenarios
+
+Run all tests:
+
+```bash
+make test
+```
+
+## First Run Credentials
+
+Bootstrap credentials used by the login flow:
+- Username: admin
+- Password: admin
+- Security key: admin
+
+Change these credentials immediately in production deployments.
+
+## Packaging and Installer Assets
+
+- PyInstaller spec: build.spec
+- Inno Setup script: installer/HIDShield.iss
+- Installer automation scripts: installer/Build-Installer.ps1 and installer/Install-HIDShield.ps1
 
 ## License
 
-Add a `LICENSE` file before publishing publicly.
+Project is currently marked as Proprietary in pyproject.toml.

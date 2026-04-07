@@ -17,16 +17,25 @@ policy:
   # Action taken when an unknown HID device is plugged in.
   default_action: "prompt"
 
-  # Threshold range: 0.0 - 1.0
-  entropy_threshold: 0.65
+  # Entropy threshold (normalized 0.0–1.0 scale, maps to 0–8 bits).
+  # 0.9 = 7.2 bits on the raw Shannon scale → SUSPICIOUS flag.
+  entropy_threshold: 0.9
 
-  # Maximum keystrokes per second before flagging a device as suspicious.
-  max_keystroke_rate: 80
+  # Keystroke rate thresholds (keystrokes per second).
+  # Two-tier system: > 20 KPS = SUSPICIOUS, ≥ 80 KPS = MALICIOUS.
+  max_keystroke_rate: 20
+  malicious_keystroke_rate: 80
 
   cooldown_seconds: 30
 
   # Privacy-sensitive; keep false in production unless needed.
   log_keystrokes: false
+
+  # PE signature detection (MZ header at offset 0)
+  pe_signature_check: true
+
+  # ML confidence threshold for MALICIOUS classification.
+  ml_malicious_confidence_threshold: 0.85
 
 # --- Database ---
 database:

@@ -24,6 +24,10 @@ class PEHeaderAnalyzer:
     is used so the sandbox pipeline remains fully operational.
     """
 
+    # Integrated from: Malware-Analysis-Report-Tool — PE signature constants
+    _MZ_SIGNATURE: bytes = b"\x4D\x5A"  # MZ header at offset 0
+    _PE_SIGNATURE: bytes = b"PE\x00\x00"  # PE\0\0 at the offset stored at 0x3C
+
     SUSPICIOUS_APIS: tuple[str, ...] = (
         "VirtualAlloc",
         "VirtualProtect",
@@ -44,6 +48,38 @@ class PEHeaderAnalyzer:
         "RegSetValueExA",
         "RegSetValueExW",
     )
+
+    # Integrated from: Malware-Analysis-Report-Tool — raw MZ + PE\0\0 validation
+    @staticmethod
+    def is_pe_executable(data: bytes) -> bool:
+        """Check if raw bytes represent a PE executable using signature bytes.
+
+        Validates:
+        1. MZ header (0x4D 0x5A) at offset 0.
+        2. PE\\0\\0 signature at the offset stored in the DWORD at 0x3C.
+
+        Parameters
+        ----------
+        data:
+            Raw file bytes (at least 64 bytes required for header inspection).
+
+        Returns
+        -------
+        bool
+            ``True`` when both MZ and PE signatures are present at the
+            expected offsets.
+        """
+        if len(data) < 64:
+            return False
+        # Check MZ magic at offset 0
+        if data[:2] != PEHeaderAnalyzer._MZ_SIGNATURE:
+            return False
+        # Read the PE header offset from the DWORD at 0x3C (little-endian)
+        pe_offset = int.from_bytes(data[0x3C:0x40], byteorder="little")
+        if pe_offset < 0 or pe_offset + 4 > len(data):
+            return False
+        # Validate PE\0\0 signature at the resolved offset
+        return data[pe_offset : pe_offset + 4] == PEHeaderAnalyzer._PE_SIGNATURE
 
     def __init__(self, simulation_mode: bool | None = None) -> None:
         """Create analyzer and conditionally load `pefile` at runtime."""
