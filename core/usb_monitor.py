@@ -135,6 +135,12 @@ class USBEventEmitter(QThread):
         """Normalize and emit a real USB insertion event."""
         pnp_device_id = str(getattr(usb_hub, "PNPDeviceID", "") or "")
         mount_point = self._resolve_mount_point(wmi_conn, pnp_device_id)
+
+        # Fallback: if strict PNP-based resolution failed, detect any
+        # newly-appeared removable drives not yet in the known set.
+        if mount_point is None:
+            mount_point = self._detect_new_removable_drive(wmi_conn)
+
         device = DeviceInfo.from_wmi_usbhub(
             usb_hub,
             mount_point=mount_point,
@@ -198,6 +204,22 @@ class USBEventEmitter(QThread):
         if len(removable_drives) == 1:
             return removable_drives[0]
 
+        return None
+
+    def _detect_new_removable_drive(self, wmi_conn: Any) -> str | None:
+        """Detect newly-appeared removable drives not in the known device set."""
+        try:
+            known_mounts = {
+                d.mount_point
+                for d in self._known_devices.values()
+                if d.mount_point
+            }
+            for ld in wmi_conn.Win32_LogicalDisk(DriveType=2):
+                drive = str(getattr(ld, "DeviceID", "") or "") + "\\"
+                if drive not in known_mounts and len(drive) > 1:
+                    return drive
+        except Exception as e:
+            print(f"[USB] Could not detect new removable drive: {e}")
         return None
 
     def _idle_loop(self) -> None:

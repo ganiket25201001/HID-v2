@@ -250,16 +250,13 @@ class ThreatAnalysisScreen(QWidget):
     def _filter_rows_to_mount(self, rows: list[dict[str, Any]], mount_root: Path | None) -> list[dict[str, Any]]:
         if mount_root is None:
             return rows
-        out: list[dict[str, Any]] = []
-        for row in rows:
-            src = str(row.get("source_file_path") or row.get("file_path") or "")
-            try:
-                src_path = Path(src).resolve()
-            except Exception:
-                continue
-            if src_path == mount_root or mount_root in src_path.parents:
-                out.append(row)
-        return out
+        if not rows:
+            return rows
+        # Accept all rows from a single scan event.  The old logic dropped
+        # every row because sandbox copy paths (in %APPDATA%) never match the
+        # USB mount root (e.g. E:\).  Scan events are already device-scoped so
+        # cross-device contamination is not a concern.
+        return rows
 
     def _display_path(self, file_path: str, mount_root: Path | None) -> str:
         if mount_root is None:

@@ -144,6 +144,7 @@ class LoginDialog(QDialog):
 
         tabs.addTab(login_card, "Login")
         tabs.addTab(signup_card, "Sign Up")
+        tabs.currentChanged.connect(self._on_tab_changed)
         root.addWidget(tabs)
 
         btn_row = QHBoxLayout()
@@ -165,7 +166,17 @@ class LoginDialog(QDialog):
         btn_row.addWidget(self.signup_btn)
         btn_row.addWidget(self.unlock_btn)
 
+        self.signup_btn.setVisible(False)
+
         root.addLayout(btn_row)
+
+    def _on_tab_changed(self, index: int) -> None:
+        if index == 0:
+            self.login_btn.setVisible(True)
+            self.signup_btn.setVisible(False)
+        else:
+            self.login_btn.setVisible(False)
+            self.signup_btn.setVisible(True)
 
     def _on_login_clicked(self) -> None:
         username = self.login_username_input.text().strip()

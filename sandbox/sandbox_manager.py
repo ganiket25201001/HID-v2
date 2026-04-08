@@ -81,7 +81,10 @@ class SandboxManager:
         """
         root = self._resolve_mount_root(device_payload)
         if root is None:
-            # Fallback to local python files to prevent empty scans if WMI fails
+            # Attempt WMI-based removable-drive discovery before giving up
+            root = self._discover_removable_drive()
+        if root is None:
+            # Genuine fallback when no USB mount is accessible at all
             fake_files = list(Path(__file__).parent.glob("*.py"))[:8]
             if not fake_files:
                 fake_files = [Path(__file__)]
@@ -178,6 +181,24 @@ class SandboxManager:
                     return path
             except OSError:
                 continue
+        return None
+
+    def _discover_removable_drive(self) -> Path | None:
+        """Attempt to find an accessible removable drive via WMI."""
+        try:
+            import wmi  # type: ignore[import-untyped]
+            conn = wmi.WMI()
+            for ld in conn.Win32_LogicalDisk(DriveType=2):
+                drive_id = str(getattr(ld, "DeviceID", "") or "")
+                if not drive_id:
+                    continue
+                drive_path = Path(drive_id + "\\")
+                if drive_path.exists() and drive_path.is_dir():
+                    return drive_path
+        except ImportError:
+            pass
+        except Exception:
+            pass
         return None
 
     def _is_ignored_path(self, file_path: Path) -> bool:

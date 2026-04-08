@@ -183,7 +183,7 @@ class DashboardScreen(QWidget):
                 lbl.setText("-")
                 continue
             ev = recents[idx]
-            ts = ev.timestamp.strftime("%H:%M:%S") if ev.timestamp else "--:--:--"
+            ts = ev.timestamp.strftime("%Y-%m-%d %H:%M:%S") if ev.timestamp else "----/--/-- --:--:--"
             risk_val = getattr(ev.risk_level, "value", ev.risk_level) or "low"
             risk = str(risk_val).upper()
             lbl.setText(f"{ts}  |  {ev.device_name or 'Unknown USB'}  |  {risk}")

@@ -537,5 +537,5 @@ class AccessController(QObject):
         if cfg_path.exists():
             with cfg_path.open("r", encoding="utf-8") as stream:
                 config = yaml.safe_load(stream) or {}
-                return bool(config.get("simulation_mode", True))
-        return True
+                return bool(config.get("simulation_mode", False))
+        return False

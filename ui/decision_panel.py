@@ -9,14 +9,14 @@ from typing import Any
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QRect, Qt
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import QFileDialog, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFileDialog, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget, QInputDialog, QLineEdit
 
 from core.event_bus import event_bus
 from database.db import get_db
 from database.repository import DeviceRepository, FileScanRepository
+from security.auth_manager import AuthManager
 from ui.styles.theme import Theme
 from ui.widgets.animated_button import AnimatedButton
-from ui.widgets.file_approval_table import FileApprovalTable
 from ui.widgets.glass_card import GlassCard
 from ui.widgets.risk_gauge import RiskGauge
 from ui.widgets.threat_badge import ThreatBadge
@@ -31,6 +31,7 @@ class DecisionPanel(QWidget):
         self._device_payload: dict[str, Any] = {}
         self._scan_files: list[dict[str, Any]] = []
         self._slide_anim: QPropertyAnimation | None = None
+        self._auth_manager = AuthManager()
 
         self._build_ui()
         self._wire_signals()
@@ -109,10 +110,6 @@ class DecisionPanel(QWidget):
         metrics.addWidget(gauge_card, stretch=2)
         shell_layout.addLayout(metrics)
 
-        self.file_table = FileApprovalTable(self)
-        shell_layout.addWidget(self.file_table.build_control_bar(self))
-        shell_layout.addWidget(self.file_table, stretch=1)
-
         actions = QHBoxLayout()
         actions.setSpacing(10)
 
@@ -164,8 +161,6 @@ class DecisionPanel(QWidget):
         self.export_report_btn.clicked.connect(self._export_threat_report)
         self.close_btn.clicked.connect(self.hide)
 
-        self.file_table.selection_summary_changed.connect(self._on_table_summary_changed)
-
     def _on_usb_inserted(self, payload: dict[str, Any]) -> None:
         self._device_payload = dict(payload)
 
@@ -212,8 +207,6 @@ class DecisionPanel(QWidget):
         return rows
 
     def _apply_results(self) -> None:
-        self.file_table.set_files(self._scan_files)
-
         dname = str(self._device_payload.get("device_name") or "Unknown USB")
         serial = str(self._device_payload.get("serial_number") or self._device_payload.get("serial") or "n/a")
         self.device_label.setText(f"Device: {dname}")
@@ -261,25 +254,47 @@ class DecisionPanel(QWidget):
         self._slide_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._slide_anim.start()
 
+    def _request_security_key(self) -> bool:
+        key, ok = QInputDialog.getText(
+            self,
+            "Security Key Required",
+            "Enter Security Key to authorize this action:",
+            QLineEdit.EchoMode.Password
+        )
+        if ok and key:
+            if self._auth_manager.verify_security_key(key):
+                return True
+            else:
+                self.status_label.setText("Invalid security key entered. Action blocked.")
+                return False
+        self.status_label.setText("Action cancelled.")
+        return False
+
     def _allow_safe_files_only(self) -> None:
+        if not self._request_security_key():
+            return
         self.status_label.setText("Safe files approved. USB access enabled for approved items.")
         event_bus.policy_action_applied.emit(self._last_event_id, "allow_safe")
         event_bus.device_access_state_changed.emit(self._last_event_id, "allow")
         self._update_action("allow")
 
     def _manage_suspicious_files(self) -> None:
-        if not self.file_table.filter_threats_button.isChecked():
-            self.file_table.filter_threats_button.click()
+        if not self._request_security_key():
+            return
         self.status_label.setText("Threat-focused review enabled. USB remains blocked until allow action.")
         event_bus.policy_action_applied.emit(self._last_event_id, "review")
 
     def _block_all_and_eject(self) -> None:
+        if not self._request_security_key():
+            return
         self.status_label.setText("All files blocked. USB access remains denied.")
         event_bus.policy_action_applied.emit(self._last_event_id, "block")
         event_bus.device_access_state_changed.emit(self._last_event_id, "block")
         self._update_action("block")
 
     def _grant_full_access(self) -> None:
+        if not self._request_security_key():
+            return
         self.status_label.setText("Full access granted by operator.")
         event_bus.policy_action_applied.emit(self._last_event_id, "allow")
         event_bus.device_access_state_changed.emit(self._last_event_id, "allow")
@@ -310,7 +325,7 @@ class DecisionPanel(QWidget):
             "device": self._device_payload,
             "exported_at": datetime.now().isoformat(),
             "files": self._scan_files,
-            "selected_files": self.file_table.get_checked_files(),
+            "selected_files": [],
         }
 
         try:
@@ -319,10 +334,7 @@ class DecisionPanel(QWidget):
         except Exception as exc:
             self.status_label.setText(f"Export failed: {exc}")
 
-    def _on_table_summary_changed(self, summary: dict[str, Any]) -> None:
-        selected = int(summary.get("selected") or 0)
-        total = int(summary.get("total") or 0)
-        self.status_label.setText(f"Selected {selected}/{total} rows for approval.")
+            self.status_label.setText(f"Export failed: {exc}")
 
     def paintEvent(self, event: Any) -> None:
         super().paintEvent(event)

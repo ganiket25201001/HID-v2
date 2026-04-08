@@ -64,7 +64,7 @@ def _is_simulation_mode() -> bool:
         return True
     if env_val in ("false", "0", "no"):
         return False
-    return bool(_load_config().get("simulation_mode", True))
+    return bool(_load_config().get("simulation_mode", False))
 
 
 # ---------------------------------------------------------------------------

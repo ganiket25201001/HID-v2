@@ -107,7 +107,7 @@ def _is_simulation_mode() -> bool:
     if env_val in ("false", "0", "no"):
         return False
     config: dict[str, Any] = _load_config()
-    return bool(config.get("simulation_mode", True))
+    return bool(config.get("simulation_mode", False))
 
 
 def _is_db_echo_enabled() -> bool:

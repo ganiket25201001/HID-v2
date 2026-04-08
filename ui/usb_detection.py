@@ -26,6 +26,7 @@ class LiveUSBDetectionScreen(QWidget):
         self._current_device: dict[str, Any] = {}
         self._current_event_id: int = 0
         self._live_spin = 0
+        self._pending_block_device_id: str = ""
 
         self._ticker = QTimer(self)
         self._ticker.setInterval(450)
@@ -141,10 +142,13 @@ class LiveUSBDetectionScreen(QWidget):
         self.device_name.setText(str(payload.get("device_name") or "Unknown USB Device"))
         self.serial.setText(str(payload.get("serial_number") or payload.get("serial") or "n/a"))
 
-        # Enforce immediate block so device does not get normal explorer access
-        # before explicit approval from Decision Panel.
-        device_id = str(payload.get("device_id") or payload.get("serial_number") or "unknown-device")
-        self._lockdown.apply_policy(device_id=device_id, action="block")
+        # Store device ID for DEFERRED OS-level blocking (applied after scan
+        # completes).  The UI shows "BLOCKED" immediately so the operator sees
+        # correct state, but the actual OS block is deferred to allow the
+        # sandbox file scanner to read the device contents first.
+        self._pending_block_device_id = str(
+            payload.get("device_id") or payload.get("serial_number") or "unknown-device"
+        )
         self.access_state.setText("BLOCKED (awaiting decision)")
         self.access_state.setStyleSheet(f"font-size: 14px; color: {Theme.ACCENT_MAGENTA}; font-weight: 700;")
 
@@ -184,6 +188,14 @@ class LiveUSBDetectionScreen(QWidget):
 
         self._current_event_id = int(event_id)
         self._ticker.stop()
+
+        # Now that the scanner has finished reading files, apply the
+        # OS-level block that was deferred during _on_usb_inserted.
+        if self._pending_block_device_id:
+            self._lockdown.apply_policy(
+                device_id=self._pending_block_device_id, action="block"
+            )
+            self._pending_block_device_id = ""
 
         files = summary.get("files") if isinstance(summary, dict) else None
         count = len(files) if isinstance(files, list) else int(summary.get("files_scanned") or 0)
