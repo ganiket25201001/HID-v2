@@ -147,6 +147,9 @@ class USBEventEmitter(QThread):
             is_simulated=self.simulation_mode,
         )
 
+        if mount_point:
+            self._close_explorer_for_drive_async(mount_point)
+
         if device.device_id in self._known_devices:
             return
 
@@ -226,3 +229,36 @@ class USBEventEmitter(QThread):
         """Keep thread alive safely when real monitoring is unavailable."""
         while self.is_running:
             time.sleep(1)
+
+    def _close_explorer_for_drive_async(self, drive_letter: str) -> None:
+        """Asynchronously sniff for and close the AutoPlay Windows Explorer window for the drive."""
+        def closer() -> None:
+            import time
+            import ctypes
+            from ctypes import wintypes
+            user32 = ctypes.windll.user32
+            drive = drive_letter.replace('\\', '').upper()
+            
+            def enum_cb(hwnd: Any, lparam: Any) -> bool:
+                length = user32.GetWindowTextLengthW(hwnd)
+                if length > 0:
+                    buff = ctypes.create_unicode_buffer(length + 1)
+                    user32.GetWindowTextW(hwnd, buff, length + 1)
+                    title = buff.value
+                    if f"({drive})" in title or title.startswith(f"{drive}\\"):
+                        user32.PostMessageW(hwnd, 0x0010, 0, 0)
+                return True
+                
+            try:
+                EnumWindows = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+                # AutoPlay takes a moment to spawn the window; poll briefly
+                for _ in range(8):
+                    if not self.is_running:
+                        break
+                    user32.EnumWindows(EnumWindows(enum_cb), 0)
+                    time.sleep(0.5)
+            except Exception as e:
+                print(f"[USB] Failed to close explorer window natively: {e}")
+
+        import threading
+        threading.Thread(target=closer, daemon=True).start()
