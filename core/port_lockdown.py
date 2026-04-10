@@ -18,6 +18,10 @@ Design
 from __future__ import annotations
 
 import os
+import platform
+import re
+import subprocess
+import threading
 from typing import Any
 
 
@@ -52,6 +56,8 @@ class PortLockdown:
 
     def __init__(self) -> None:
         self.simulation_mode = _get_simulation_mode()
+        self._mount_lock = threading.RLock()
+        self._isolated_mounts: dict[str, dict[str, str]] = {}
 
     # ------------------------------------------------------------------
     # Policy Router
@@ -85,10 +91,58 @@ class PortLockdown:
         if action_norm in ("block", "quarantine"):
             return self._disable_device_live(device_id)
         elif action_norm == "allow":
-            return self._enable_device_live(device_id)
+            enabled = self._enable_device_live(device_id)
+            mount_restored = self._restore_mount_for_device(device_id)
+            return bool(enabled or mount_restored)
         
         # PROMPT / MONITOR don't require OS-level interference
         return True
+
+    def isolate_mount_point(self, device_id: str, mount_point: str) -> str | None:
+        """Detach a removable drive letter and return its stable volume GUID path.
+
+        The returned path has the ``\\\\?\\Volume{GUID}\\`` shape and remains
+        accessible to privileged services while removing easy host-user access
+        through Explorer and standard drive-letter navigation.
+        """
+        if self.simulation_mode:
+            print(
+                f"[LOCKDOWN] SIMULATION: isolate_mount_point({device_id}, {mount_point})"
+            )
+            return mount_point
+
+        if platform.system().lower() != "windows":
+            return None
+
+        drive_root = self._normalize_drive_root(mount_point)
+        if not drive_root:
+            return None
+
+        volume_guid = self._query_volume_guid(drive_root)
+        if not volume_guid:
+            return None
+
+        if not self._detach_drive_letter(drive_root):
+            return None
+
+        with self._mount_lock:
+            self._isolated_mounts[str(device_id)] = {
+                "volume_guid": volume_guid,
+                "drive_root": drive_root,
+            }
+
+        print(
+            "[LOCKDOWN] LIVE: Detached drive letter "
+            f"{drive_root} for device {device_id}; isolated path={volume_guid}"
+        )
+        return volume_guid
+
+    def restore_mount_point(self, device_id: str) -> bool:
+        """Restore a previously detached drive letter for an allowed device."""
+        if self.simulation_mode:
+            print(f"[LOCKDOWN] SIMULATION: restore_mount_point({device_id})")
+            return True
+        return self._restore_mount_for_device(device_id)
 
     # ------------------------------------------------------------------
     # Global Controls
@@ -342,3 +396,90 @@ class PortLockdown:
         except Exception as e:
             print(f"[LOCKDOWN] WMI: Error enabling device — {e}")
             return False
+
+    # ------------------------------------------------------------------
+    # Drive-letter isolation helpers
+    # ------------------------------------------------------------------
+
+    def _normalize_drive_root(self, mount_point: str) -> str | None:
+        text = str(mount_point or "").strip()
+        if not text:
+            return None
+
+        if re.match(r"^[A-Za-z]:$", text):
+            return text.upper()
+        if re.match(r"^[A-Za-z]:\\$", text):
+            return text[:2].upper()
+        return None
+
+    def _query_volume_guid(self, drive_root: str) -> str | None:
+        try:
+            result = subprocess.run(
+                ["mountvol", drive_root, "/L"],
+                capture_output=True,
+                text=True,
+                timeout=8,
+            )
+        except Exception as exc:
+            print(f"[LOCKDOWN] mountvol /L failed for {drive_root}: {exc}")
+            return None
+
+        if result.returncode != 0:
+            return None
+
+        for line in result.stdout.splitlines():
+            candidate = line.strip()
+            if candidate.upper().startswith(r"\\?\VOLUME{"):
+                if not candidate.endswith("\\"):
+                    candidate = candidate + "\\"
+                return candidate
+        return None
+
+    def _detach_drive_letter(self, drive_root: str) -> bool:
+        try:
+            result = subprocess.run(
+                ["mountvol", drive_root, "/D"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return result.returncode == 0
+        except Exception as exc:
+            print(f"[LOCKDOWN] mountvol /D failed for {drive_root}: {exc}")
+            return False
+
+    def _attach_drive_letter(self, drive_root: str, volume_guid: str) -> bool:
+        try:
+            result = subprocess.run(
+                ["mountvol", drive_root, volume_guid],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return result.returncode == 0
+        except Exception as exc:
+            print(
+                f"[LOCKDOWN] mountvol attach failed for {drive_root} <- {volume_guid}: {exc}"
+            )
+            return False
+
+    def _restore_mount_for_device(self, device_id: str) -> bool:
+        with self._mount_lock:
+            tracked = self._isolated_mounts.get(str(device_id))
+
+        if not tracked:
+            return False
+
+        drive_root = tracked.get("drive_root", "")
+        volume_guid = tracked.get("volume_guid", "")
+        if not drive_root or not volume_guid:
+            return False
+
+        restored = self._attach_drive_letter(drive_root, volume_guid)
+        if restored:
+            with self._mount_lock:
+                self._isolated_mounts.pop(str(device_id), None)
+            print(
+                f"[LOCKDOWN] LIVE: Restored drive letter {drive_root} for device {device_id}"
+            )
+        return restored

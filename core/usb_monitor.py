@@ -11,6 +11,7 @@ from PySide6.QtCore import QThread
 
 from core.device_info import DeviceInfo
 from core.event_bus import event_bus
+from core.port_lockdown import PortLockdown
 
 
 def _get_simulation_mode() -> bool:
@@ -29,6 +30,21 @@ def _get_simulation_mode() -> bool:
     return False
 
 
+def _get_windows_sandbox_config() -> dict[str, Any]:
+    import yaml
+    from pathlib import Path
+
+    cfg = Path(__file__).resolve().parent.parent / "config.yaml"
+    if not cfg.exists():
+        return {}
+    with open(cfg, "r", encoding="utf-8") as fh:
+        data = yaml.safe_load(fh) or {}
+    sandbox_cfg = data.get("windows_sandbox", {})
+    if isinstance(sandbox_cfg, dict):
+        return sandbox_cfg
+    return {}
+
+
 # ---------------------------------------------------------------------------
 # Monitor Thread
 # ---------------------------------------------------------------------------
@@ -42,6 +58,10 @@ class USBEventEmitter(QThread):
         self.is_running: bool = False
         self.simulation_mode: bool = _get_simulation_mode()
         self._known_devices: dict[str, DeviceInfo] = {}
+        self._lockdown = PortLockdown()
+
+        sandbox_cfg = _get_windows_sandbox_config()
+        self._isolate_on_insert = bool(sandbox_cfg.get("isolate_drive_letter_on_insert", True))
 
     def run(self) -> None:
         """Main loop of the QThread (called implicitly by ``.start()``)."""
@@ -147,14 +167,43 @@ class USBEventEmitter(QThread):
             is_simulated=self.simulation_mode,
         )
 
+        payload_overrides: dict[str, Any] = {}
         if mount_point:
             self._close_explorer_for_drive_async(mount_point)
+
+            isolated_mount = self._isolate_mount_pre_event(
+                device_id=device.device_id,
+                mount_point=mount_point,
+            )
+            if isolated_mount:
+                device.mount_point = isolated_mount
+                payload_overrides["original_mount_point"] = mount_point
+                payload_overrides["host_isolated"] = True
 
         if device.device_id in self._known_devices:
             return
 
         self._known_devices[device.device_id] = device
-        event_bus.usb_device_inserted.emit(device.to_dict())
+        payload = device.to_dict()
+        if payload_overrides:
+            payload.update(payload_overrides)
+        event_bus.usb_device_inserted.emit(payload)
+
+    def _isolate_mount_pre_event(self, *, device_id: str, mount_point: str) -> str | None:
+        """Detach drive letter before event emission to reduce host exposure."""
+        if self.simulation_mode:
+            return None
+        if not self._isolate_on_insert:
+            return None
+
+        try:
+            return self._lockdown.isolate_mount_point(
+                device_id=device_id,
+                mount_point=mount_point,
+            )
+        except Exception as exc:
+            print(f"[USB] Pre-event mount isolation failed: {exc}")
+            return None
 
     def _handle_removed_device(self, usb_hub: Any) -> None:
         """Emit USB removal events using the most recent known device snapshot."""

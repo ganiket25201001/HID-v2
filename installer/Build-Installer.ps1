@@ -11,7 +11,7 @@ $issPath = Join-Path $installerDir "HIDShield.iss"
 $legacyInstallScript = Join-Path $installerDir "Install-HIDShield.ps1"
 
 if (-not (Test-Path $distExe)) {
-    throw "EXE not found at: $distExe. Build first with: pyinstaller build.spec"
+    throw "EXE not found at: $distExe. Build first with: .venv/Scripts/python.exe -m PyInstaller --clean --noconfirm build.spec"
 }
 
 $iscc = Get-Command iscc -ErrorAction SilentlyContinue

@@ -1,8 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import importlib.util
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 block_cipher = None
 
@@ -10,8 +11,21 @@ project_dir = Path(SPECPATH).resolve()
 assets_dir = project_dir / "assets"
 icon_path = project_dir / "assets" / "icon.ico"
 
+
+def _require_package(pkg: str) -> None:
+    if importlib.util.find_spec(pkg) is None:
+        raise SystemExit(
+            f"[build.spec] Missing required package '{pkg}' in current Python environment. "
+            "Build with the project virtual environment: .venv/Scripts/python.exe -m PyInstaller --clean --noconfirm build.spec"
+        )
+
+
+for required in ("PySide6", "dotenv", "yaml"):
+    _require_package(required)
+
 # Bundle assets (including fonts) and required package data.
 datas = []
+binaries = []
 if assets_dir.exists():
     datas.append((str(assets_dir), "assets"))
 
@@ -24,6 +38,10 @@ if config_file.exists():
     datas.append((str(config_file), "."))
 
 datas += collect_data_files("reportlab")
+datas += collect_data_files("dotenv")
+datas += collect_data_files("PySide6")
+
+binaries += collect_dynamic_libs("PySide6")
 
 hiddenimports = [
     # Core runtime
@@ -54,10 +72,13 @@ hiddenimports = [
     "PySide6.QtXml",
 ]
 
+hiddenimports += collect_submodules("dotenv")
+hiddenimports += collect_submodules("PySide6")
+
 analysis = Analysis(
     ["main.py"],
     pathex=[str(project_dir)],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
@@ -111,5 +132,5 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=(str(icon_path) if icon_path.exists() else None),
-    uac_admin=True,
+    uac_admin=False,
 )

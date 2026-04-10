@@ -10,7 +10,7 @@ if not exist "%EXE_PATH%" (
 
 if not exist "%EXE_PATH%" (
     echo [HID Shield] Could not find "%EXE_NAME%".
-    echo Build first with: pyinstaller build.spec
+    echo Build first with: .venv\Scripts\python.exe -m PyInstaller --clean --noconfirm build.spec
     pause
     exit /b 1
 )

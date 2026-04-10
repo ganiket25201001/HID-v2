@@ -1,0 +1,28 @@
+<Configuration>
+  <VGpu>Disable</VGpu>
+  <Networking>Disable</Networking>
+  <AudioInput>Disable</AudioInput>
+  <VideoInput>Disable</VideoInput>
+  <ClipboardRedirection>Disable</ClipboardRedirection>
+  <PrinterRedirection>Disable</PrinterRedirection>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>C:\ProgramData\HIDShield\sandbox_bridge\input</HostFolder>
+      <SandboxFolder>C:\HIDShield\Input</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>C:\ProgramData\HIDShield\sandbox_bridge\output</HostFolder>
+      <SandboxFolder>C:\HIDShield\Output</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>C:\ProgramData\HIDShield\sandbox_bridge\scripts</HostFolder>
+      <SandboxFolder>C:\HIDShield\Scripts</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\HIDShield\Scripts\run_hidshield_scan.ps1 -InputDir C:\HIDShield\Input -OutputFile C:\HIDShield\Output\sandbox_result.json</Command>
+  </LogonCommand>
+</Configuration>

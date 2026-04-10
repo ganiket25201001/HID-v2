@@ -15,12 +15,14 @@ import yaml
 from PySide6.QtCore import QObject, Signal
 
 from core.event_bus import event_bus
+from core.port_lockdown import PortLockdown
 from database.db import get_db
 from database.models import DeviceEvent, PolicyAction, RiskLevel
 from database.repository import AlertRepository, DeviceRepository, FileScanRepository
 from sandbox.entropy_analyzer import ShannonEntropyAnalyzer
 from sandbox.pe_analyzer import PEHeaderAnalyzer
 from sandbox.sandbox_manager import SandboxManager
+from sandbox.windows_sandbox_bridge import WindowsSandboxBridge
 from security.policy_engine import DeviceSnapshot, PolicyEngine
 
 
@@ -39,11 +41,24 @@ class FileScanner(QObject):
     def __init__(self) -> None:
         """Initialize scanner dependencies and worker infrastructure."""
         super().__init__()
+        self._runtime_config = self._load_runtime_config()
         self._simulation_mode = self._is_simulation_mode()
+        self._isolate_drive_on_insert = bool(
+            self._runtime_config.get("windows_sandbox", {}).get(
+                "isolate_drive_letter_on_insert", True
+            )
+        )
+        self._require_windows_sandbox = bool(
+            self._runtime_config.get("windows_sandbox", {}).get(
+                "require_windows_sandbox", True
+            )
+        )
         self._lock = threading.RLock()
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="hid-scan")
 
+        self._port_lockdown = PortLockdown()
         self._sandbox_manager = SandboxManager()
+        self._windows_sandbox = WindowsSandboxBridge()
         self._entropy_analyzer = ShannonEntropyAnalyzer()
         self._pe_analyzer = PEHeaderAnalyzer(simulation_mode=self._simulation_mode)
         self._policy_engine = PolicyEngine(simulation_mode=self._simulation_mode)
@@ -63,8 +78,9 @@ class FileScanner(QObject):
             Device event ID used for event bus correlation.
         """
         with self._lock:
-            event_id = self._create_initial_device_event(device)
             device_dict = self._device_to_dict(device)
+            self._enforce_host_isolation(device_dict)
+            event_id = self._create_initial_device_event(device_dict)
             event_bus.scan_started.emit(event_id)
             self._emit_progress(event_id, 0, f"Scan started for event #{event_id} ({device_dict.get('device_name', 'Unknown')})")
             self._executor.submit(self._scan_worker, event_id, device_dict)
@@ -96,33 +112,44 @@ class FileScanner(QObject):
                 self._finalize_scan(event_id, summary, RiskLevel.SAFE.value, PolicyAction.MONITOR.value)
                 return
 
-            all_rows: list[dict[str, Any]] = []
-            total_files = len(files)
+            all_rows, analysis_engine = self._run_analysis_pipeline(
+                event_id=event_id,
+                device_dict=device_dict,
+                session_id=session_id,
+                source_files=source_files,
+                staged_files=files,
+            )
 
-            for index, (source_path, file_path) in enumerate(zip(source_files, files), start=1):
-                progress = int((index / total_files) * 100)
-                self._emit_progress(event_id, progress, f"Analyzing {file_path.name} ({index}/{total_files})")
-
-                row = self._analyze_single_file(
-                    file_path=file_path,
-                    source_path=source_path,
-                    event_id=event_id,
-                    device_dict=device_dict,
+            if analysis_engine == "sandbox_unavailable":
+                summary = {
+                    "device": device_dict,
+                    "files": [],
+                    "total_files": 0,
+                    "safe_files": 0,
+                    "medium_risk_files": 0,
+                    "high_risk_files": 0,
+                    "max_entropy": 0.0,
+                    "analysis_engine": analysis_engine,
+                    "summary_note": (
+                        "Strict isolation mode is enabled and Windows Sandbox results "
+                        "were unavailable. Device remains blocked."
+                    ),
+                    "risk_level": RiskLevel.CRITICAL.value,
+                    "recommended_action": PolicyAction.BLOCK.value,
+                    "timestamp": int(time.time()),
+                }
+                self._finalize_scan(
+                    event_id,
+                    summary,
+                    RiskLevel.CRITICAL.value,
+                    PolicyAction.BLOCK.value,
                 )
-                all_rows.append(row)
-                self.file_scanned.emit(row)
-
-                if row["risk_level"] in {RiskLevel.HIGH.value, RiskLevel.CRITICAL.value}:
-                    event_bus.threat_detected.emit(
-                        {
-                            "device_event_id": event_id,
-                            "file_name": row["file_name"],
-                            "risk_level": row["risk_level"],
-                            "threat_name": row.get("threat_name"),
-                        }
-                    )
+                return
 
             summary = self._build_summary(device_dict=device_dict, rows=all_rows)
+            summary["analysis_engine"] = analysis_engine
+            if analysis_engine == "windows_sandbox":
+                summary["summary_note"] = "Windows Sandbox scan finished with isolated analysis pipeline."
             risk_level, action = self._evaluate_device_policy(device_dict=device_dict, rows=all_rows)
             summary["risk_level"] = risk_level
             summary["recommended_action"] = action
@@ -139,6 +166,207 @@ class FileScanner(QObject):
             self._finalize_scan(event_id, error_summary, RiskLevel.HIGH.value, PolicyAction.PROMPT.value)
         finally:
             self._sandbox_manager.cleanup_session(session_id)
+
+    def _run_analysis_pipeline(
+        self,
+        *,
+        event_id: int,
+        device_dict: dict[str, Any],
+        session_id: str,
+        source_files: list[Path],
+        staged_files: list[Path],
+    ) -> tuple[list[dict[str, Any]], str]:
+        """Run sandbox-first analysis and fallback to local analyzers if needed."""
+        sandbox_rows = self._analyze_with_windows_sandbox(
+            event_id=event_id,
+            session_id=session_id,
+            source_files=source_files,
+            staged_files=staged_files,
+            device_dict=device_dict,
+        )
+        if sandbox_rows is not None:
+            return sandbox_rows, "windows_sandbox"
+
+        if self._require_windows_sandbox and self._windows_sandbox.enabled:
+            self._emit_progress(
+                event_id,
+                15,
+                "Windows Sandbox unavailable in strict mode. Blocking access.",
+            )
+            return [], "sandbox_unavailable"
+
+        all_rows: list[dict[str, Any]] = []
+        total_files = len(staged_files)
+
+        for index, (source_path, file_path) in enumerate(zip(source_files, staged_files), start=1):
+            progress = int((index / total_files) * 100)
+            self._emit_progress(event_id, progress, f"Analyzing {file_path.name} ({index}/{total_files})")
+
+            row = self._analyze_single_file(
+                file_path=file_path,
+                source_path=source_path,
+                event_id=event_id,
+                device_dict=device_dict,
+            )
+            all_rows.append(row)
+            self.file_scanned.emit(row)
+
+            if row["risk_level"] in {RiskLevel.HIGH.value, RiskLevel.CRITICAL.value}:
+                event_bus.threat_detected.emit(
+                    {
+                        "device_event_id": event_id,
+                        "file_name": row["file_name"],
+                        "risk_level": row["risk_level"],
+                        "threat_name": row.get("threat_name"),
+                    }
+                )
+
+        return all_rows, "host_local"
+
+    def _analyze_with_windows_sandbox(
+        self,
+        *,
+        event_id: int,
+        session_id: str,
+        source_files: list[Path],
+        staged_files: list[Path],
+        device_dict: dict[str, Any],
+    ) -> list[dict[str, Any]] | None:
+        """Run file analysis inside Windows Sandbox and normalize output rows."""
+        if self._simulation_mode:
+            return None
+        if not self._windows_sandbox.is_available():
+            return None
+
+        self._emit_progress(event_id, 10, "Launching Windows Sandbox for isolated USB analysis...")
+
+        sandbox_output = self._windows_sandbox.analyze_staged_files(
+            session_id=session_id,
+            staged_files=staged_files,
+        )
+        if not sandbox_output:
+            self._emit_progress(
+                event_id,
+                12,
+                "Windows Sandbox result unavailable, falling back to local analyzers.",
+            )
+            return None
+
+        staged_map: dict[str, Path] = {
+            staged.name: source
+            for source, staged in zip(source_files, staged_files)
+        }
+        rows: list[dict[str, Any]] = []
+        total_rows = len(sandbox_output)
+
+        for index, item in enumerate(sandbox_output, start=1):
+            staged_name = str(item.get("sandbox_name") or "").strip()
+            source_path = staged_map.get(staged_name, Path(staged_name or f"sandbox_{index}"))
+
+            row = self._build_row_from_sandbox_result(
+                source_path=source_path,
+                sandbox_row=item,
+                device_dict=device_dict,
+            )
+            self._persist_file_result(event_id=event_id, row=row)
+            rows.append(row)
+            self.file_scanned.emit(row)
+
+            progress = 15 + int((index / max(1, total_rows)) * 80)
+            self._emit_progress(
+                event_id,
+                progress,
+                f"Sandbox analyzed {row['file_name']} ({index}/{total_rows})",
+            )
+
+            if row["risk_level"] in {RiskLevel.HIGH.value, RiskLevel.CRITICAL.value}:
+                event_bus.threat_detected.emit(
+                    {
+                        "device_event_id": event_id,
+                        "file_name": row["file_name"],
+                        "risk_level": row["risk_level"],
+                        "threat_name": row.get("threat_name"),
+                    }
+                )
+
+        return rows
+
+    def _build_row_from_sandbox_result(
+        self,
+        *,
+        source_path: Path,
+        sandbox_row: dict[str, Any],
+        device_dict: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Normalize one Windows Sandbox row into repository/UI output shape."""
+        mime_type, _ = mimetypes.guess_type(str(source_path))
+        mime_type = mime_type or "application/octet-stream"
+
+        entropy = self._safe_float(sandbox_row.get("entropy"), default=0.0)
+        risk_level = str(sandbox_row.get("risk_level", RiskLevel.LOW.value)).strip().lower()
+        if risk_level not in {
+            RiskLevel.SAFE.value,
+            RiskLevel.LOW.value,
+            RiskLevel.MEDIUM.value,
+            RiskLevel.HIGH.value,
+            RiskLevel.CRITICAL.value,
+        }:
+            risk_level = RiskLevel.LOW.value
+
+        file_size = int(self._safe_float(sandbox_row.get("size"), default=0.0))
+        feature_vector = {
+            "size_kb": round(file_size / 1024.0, 3),
+            "entropy": float(entropy),
+            "is_executable": int(source_path.suffix.lower() in {".exe", ".dll", ".scr", ".com", ".sys"}),
+            "suspicious_api_count": 0,
+            "has_autorun": int(source_path.name.lower() == "autorun.inf"),
+            "has_hidden_path": int(any(part.startswith(".") for part in source_path.parts)),
+            "has_script_behavior": int(source_path.suffix.lower() in {".ps1", ".bat", ".cmd", ".vbs", ".js", ".py", ".sh"}),
+            "yara_hits": 0,
+        }
+
+        return {
+            "file_path": str(source_path),
+            "file_name": source_path.name,
+            "size": file_size,
+            "mime_type": mime_type,
+            "sha256": self._optional_str(sandbox_row.get("sha256")),
+            "md5": None,
+            "entropy": float(entropy),
+            "entropy_classification": "sandbox_estimated",
+            "entropy_explanation": "Estimated inside Windows Sandbox script.",
+            "pe": {},
+            "heuristics": {"source": "windows_sandbox"},
+            "is_malicious": risk_level in {RiskLevel.HIGH.value, RiskLevel.CRITICAL.value},
+            "risk_level": risk_level,
+            "threat_name": self._optional_str(sandbox_row.get("threat_name")),
+            "notes": self._optional_str(sandbox_row.get("notes")) or "Windows Sandbox scan result.",
+            "feature_vector": feature_vector,
+            "device_name": device_dict.get("device_name"),
+            "analysis_engine": "windows_sandbox",
+        }
+
+    def _enforce_host_isolation(self, device_dict: dict[str, Any]) -> None:
+        """Detach drive letter before scanning to reduce host-level exposure."""
+        if self._simulation_mode:
+            return
+        if not self._isolate_drive_on_insert:
+            return
+        if bool(device_dict.get("host_isolated", False)):
+            return
+
+        mount_point = self._optional_str(device_dict.get("mount_point"))
+        device_id = self._optional_str(device_dict.get("device_id"))
+        if not mount_point or not device_id:
+            return
+
+        isolated = self._port_lockdown.isolate_mount_point(device_id=device_id, mount_point=mount_point)
+        if not isolated:
+            return
+
+        device_dict["original_mount_point"] = mount_point
+        device_dict["mount_point"] = isolated
+        device_dict["host_isolated"] = True
 
     def _analyze_single_file(
         self,
@@ -463,6 +691,15 @@ class FileScanner(QObject):
         as_text = str(value).strip()
         return as_text if as_text else None
 
+    def _safe_float(self, value: Any, default: float) -> float:
+        """Safely coerce unknown values to float for score normalization."""
+        try:
+            if value is None:
+                return default
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
     def _is_simulation_mode(self) -> bool:
         """Resolve simulation mode from env variable and config fallback."""
         env_value = os.getenv("HID_SHIELD_SIMULATION_MODE", "").strip().lower()
@@ -477,3 +714,11 @@ class FileScanner(QObject):
                 config = yaml.safe_load(stream) or {}
                 return bool(config.get("simulation_mode", False))
         return False
+
+    def _load_runtime_config(self) -> dict[str, Any]:
+        """Load full runtime YAML config for scanner feature toggles."""
+        config_path = Path(__file__).resolve().parent.parent / "config.yaml"
+        if not config_path.exists():
+            return {}
+        with config_path.open("r", encoding="utf-8") as stream:
+            return yaml.safe_load(stream) or {}

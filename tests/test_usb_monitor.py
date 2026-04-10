@@ -71,6 +71,60 @@ class TestUSBEventEmitter:
         assert hasattr(emitter, "simulation_mode")
         assert isinstance(emitter.simulation_mode, bool)
 
+    def test_insert_event_payload_reflects_pre_isolated_mount(self, monkeypatch):
+        """Mount should be isolated before insertion payload emission."""
+        from core.usb_monitor import USBEventEmitter
+        from core.event_bus import event_bus
+
+        emitter = USBEventEmitter()
+        emitter.simulation_mode = False
+        emitter._isolate_on_insert = True
+
+        monkeypatch.setattr(
+            emitter,
+            "_resolve_mount_point",
+            lambda _conn, _pnp: "E:\\",
+        )
+        monkeypatch.setattr(
+            emitter,
+            "_detect_new_removable_drive",
+            lambda _conn: None,
+        )
+        monkeypatch.setattr(
+            emitter,
+            "_close_explorer_for_drive_async",
+            lambda _drive: None,
+        )
+        monkeypatch.setattr(
+            emitter._lockdown,
+            "isolate_mount_point",
+            lambda device_id, mount_point: r"\\?\Volume{abc-def}\\",
+        )
+
+        usb_hub = MagicMock()
+        usb_hub.PNPDeviceID = "USB\\VID_1234&PID_5678\\SERIAL123"
+        usb_hub.DeviceID = "USB\\VID_1234&PID_5678\\SERIAL123"
+        usb_hub.Name = "USB Flash Device"
+        usb_hub.Caption = "USB Flash Device"
+        usb_hub.Manufacturer = "TestVendor"
+
+        received: list[dict] = []
+
+        def _on_insert(payload):
+            received.append(dict(payload))
+
+        event_bus.usb_device_inserted.connect(_on_insert)
+        try:
+            emitter._handle_inserted_device(MagicMock(), usb_hub)
+        finally:
+            event_bus.usb_device_inserted.disconnect(_on_insert)
+
+        assert received, "Expected one insertion payload"
+        payload = received[0]
+        assert payload["mount_point"] == r"\\?\Volume{abc-def}\\"
+        assert payload["original_mount_point"] == "E:\\"
+        assert payload["host_isolated"] is True
+
 
 class TestDeviceInfo:
     """Test DeviceInfo dataclass parsing."""

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -62,7 +64,10 @@ class LightGBMClassifier:
     def __init__(self, model_path: Path | None = None) -> None:
         default_model = Path(__file__).resolve().parent / "models" / "hid_shield_model.txt"
         self._model_path = model_path or default_model
-        self._booster = self._load_model(self._model_path)
+        self._rule_only_mode = self._should_use_rule_only_mode()
+        self._booster: Booster | None = None
+        if not self._rule_only_mode:
+            self._booster = self._load_model(self._model_path)
 
     def classify_features(self, features: Mapping[str, float]) -> ClassificationResult:
         """Classify one file using hybrid model and rule signals."""
@@ -71,7 +76,11 @@ class LightGBMClassifier:
         rule_score, rule_contributions = self._rule_score(features)
         rule_prob = self._bounded(rule_score / 100.0, 0.0, 1.0)
 
-        model_prob, model_detail = self._predict_probability(vector)
+        if self._booster is None:
+            model_prob = self._rule_model_probability(features)
+            model_detail: dict[str, float] = {}
+        else:
+            model_prob, model_detail = self._predict_probability(vector)
 
         risk_signal = self._risk_signal(features)
         hybrid_prob = (0.32 * rule_prob) + (0.55 * model_prob) + (0.13 * risk_signal)
@@ -177,6 +186,43 @@ class LightGBMClassifier:
                 "Run 'python ml/train_model.py' to generate ml/models/hid_shield_model.txt."
             )
         return Booster(model_file=str(model_path))
+
+    def _should_use_rule_only_mode(self) -> bool:
+        """Return True when native LightGBM should be bypassed for stability."""
+        env_val = os.getenv("HID_SHIELD_DISABLE_LIGHTGBM", "").strip().lower()
+        if env_val in {"1", "true", "yes", "on"}:
+            return True
+
+        # LightGBM native wheel in some environments may abort on Python 3.13.
+        # Fall back to deterministic rule scoring instead of crashing the process.
+        if sys.version_info >= (3, 13):
+            return True
+
+        return False
+
+    def _rule_model_probability(self, features: Mapping[str, float]) -> float:
+        """Estimate probability without LightGBM native model."""
+        entropy = self._bounded(self._coerce_float(features.get("entropy", 0.0)) / 8.0, 0.0, 1.0)
+        suspicious_imports = self._bounded(self._coerce_float(features.get("suspicious_imports_count", 0.0)) / 6.0, 0.0, 1.0)
+        yara = self._bounded(self._coerce_float(features.get("yara_matches", 0.0)) / 3.0, 0.0, 1.0)
+        mismatch = self._bounded(self._coerce_float(features.get("extension_mismatch", 0.0)), 0.0, 1.0)
+        pe_header = self._bounded(self._coerce_float(features.get("has_pe_header", 0.0)), 0.0, 1.0)
+        script = self._bounded(self._coerce_float(features.get("is_script", 0.0)), 0.0, 1.0)
+        hidden = self._bounded(self._coerce_float(features.get("is_hidden", 0.0)), 0.0, 1.0)
+        autorun = self._bounded(self._coerce_float(features.get("has_autorun_ref", 0.0)), 0.0, 1.0)
+
+        return self._bounded(
+            (0.30 * entropy)
+            + (0.18 * suspicious_imports)
+            + (0.16 * yara)
+            + (0.09 * mismatch)
+            + (0.09 * pe_header)
+            + (0.07 * script)
+            + (0.05 * hidden)
+            + (0.06 * autorun),
+            0.0,
+            1.0,
+        )
 
     def _predict_probability(self, vector: list[float]) -> tuple[float, dict[str, float]]:
         """Predict malicious probability with optional feature contribution details."""

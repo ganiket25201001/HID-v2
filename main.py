@@ -9,8 +9,28 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from dotenv import load_dotenv
-from PySide6.QtWidgets import QApplication, QMessageBox
+try:
+    from PySide6.QtWidgets import QApplication, QMessageBox
+except Exception as exc:
+    message = (
+        "PySide6 runtime is missing in this build. "
+        "Rebuild with the project virtual environment: "
+        ".venv/Scripts/python.exe -m PyInstaller --clean --noconfirm build.spec"
+    )
+    if os.name == "nt":
+        try:
+            ctypes.windll.user32.MessageBoxW(None, message, "HID Shield Startup Error", 0x10)
+        except Exception:
+            pass
+    raise SystemExit(message) from exc
+
+try:
+    from dotenv import load_dotenv
+except Exception:
+    # Optional dependency for local environment variable loading.
+    # Packaged production builds should still start without it.
+    def load_dotenv(*args: Any, **kwargs: Any) -> bool:  # type: ignore[override]
+        return False
 
 from core.event_bus import event_bus
 from core.usb_monitor import USBEventEmitter

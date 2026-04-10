@@ -37,6 +37,31 @@ policy:
   # ML confidence threshold for MALICIOUS classification.
   ml_malicious_confidence_threshold: 0.85
 
+# --- Windows Sandbox Isolation ---
+windows_sandbox:
+  # Set true to prefer Windows Sandbox for analysis workflows.
+  enabled: true
+
+  # Detach drive letter immediately when a USB storage mount is detected.
+  # The volume remains accessible via \\?\Volume{GUID}\ for privileged scanning.
+  isolate_drive_letter_on_insert: true
+
+  # Upper bound wait time for sandbox result JSON output.
+  timeout_seconds: 240
+
+  # Fail-closed behavior: if sandbox scan is unavailable, device remains blocked.
+  require_windows_sandbox: true
+
+  # Keep per-session artifacts for debugging (wsb, scripts, outputs).
+  keep_artifacts: false
+
+  # Optional host-side close after result extraction.
+  # Keep false to avoid abrupt Windows Sandbox disconnect popups.
+  close_after_analysis: false
+
+  # Host-side staging root used for sandbox mapped folders.
+  host_staging_root: "C:/ProgramData/HIDShield/sandbox_bridge"
+
 # --- Database ---
 database:
   path: "hid_shield.db"

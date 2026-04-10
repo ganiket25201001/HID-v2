@@ -1,4 +1,13 @@
 PYTHON ?= python
+
+ifeq ($(wildcard .venv/Scripts/python.exe),.venv/Scripts/python.exe)
+PYTHON := .venv/Scripts/python.exe
+endif
+
+ifeq ($(wildcard .venv/bin/python),.venv/bin/python)
+PYTHON := .venv/bin/python
+endif
+
 PIP ?= $(PYTHON) -m pip
 PYTEST ?= $(PYTHON) -m pytest
 PYINSTALLER ?= $(PYTHON) -m PyInstaller
