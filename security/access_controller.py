@@ -289,6 +289,12 @@ class AccessController(QObject):
         else:
             policy_action = PolicyAction.MONITOR.value
 
+        # Physical Enforcement - Fix: Trigger real port lockdown/unlock
+        device_id = str(device_payload.get("device_id") or "")
+        if device_id and not self._simulation_mode:
+            print(f"[ACCESS] Triggering physical '{policy_action}' for device: {device_id}")
+            self._port_lockdown.apply_policy(device_id, policy_action)
+
         # Simulation-mode behavior: persist and emit only, no real mounts/ejects.
         self._persist_action(
             device_event_id=device_event_id,
@@ -322,6 +328,8 @@ class AccessController(QObject):
         """Execute an operator-selected mode from DecisionPanel button events."""
         event_id = int(getattr(panel, "_last_event_id", 0) or 0)
         device_payload = getattr(panel, "_last_device_payload", {})
+        if not device_payload and hasattr(panel, "_device_payload"):
+             device_payload = getattr(panel, "_device_payload")
         rows = getattr(panel, "_scan_files", [])
 
         if not isinstance(device_payload, Mapping):
@@ -493,6 +501,7 @@ class AccessController(QObject):
             payload = dict(device.to_dict())
         else:
             payload = {
+                "device_id": getattr(device, "device_id", None),
                 "device_name": getattr(device, "device_name", getattr(device, "name", "Unknown Device")),
                 "vendor_id": getattr(device, "vendor_id", None),
                 "product_id": getattr(device, "product_id", None),
@@ -501,6 +510,8 @@ class AccessController(QObject):
                 "device_type": getattr(device, "device_type", "storage"),
             }
 
+        if "device_id" not in payload:
+            payload["device_id"] = payload.get("id")
         if "device_name" not in payload:
             payload["device_name"] = payload.get("name", "Unknown Device")
         if "serial_number" not in payload:

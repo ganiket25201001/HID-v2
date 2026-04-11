@@ -20,10 +20,12 @@ class AppEventBus(QObject):
     scan_progress = Signal(int, int, str)  # event_id, progress(0-100), message
     scan_completed = Signal(int, dict)
 
-    # Threat/policy lifecycle
+    # Threat/policy/ai lifecycle
     threat_detected = Signal(dict)
     policy_action_applied = Signal(int, str)
     device_access_state_changed = Signal(int, str)  # event_id, block|allow|prompt
+    ai_explanation_ready = Signal(dict)
+
 
     # UI sync helpers
     dashboard_refresh_requested = Signal(dict)

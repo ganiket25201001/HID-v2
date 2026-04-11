@@ -177,6 +177,24 @@ class Classifier(QObject):
         self._backend = LightGBMClassifier()
         self._policy_engine = PolicyEngine()
 
+        # Check AI integration flag
+        self._ai_enabled = False
+        try:
+            import yaml
+            cfg_path = Path(__file__).resolve().parent.parent / "config.yaml"
+            if cfg_path.exists():
+                with cfg_path.open() as f:
+                    cfg = yaml.safe_load(f) or {}
+                    self._ai_enabled = bool(cfg.get("policy", {}).get("enable_ai_agent", False))
+        except Exception:
+            pass
+            
+        if self._ai_enabled:
+            from ai_agent.explanation_agent import ExplanationAgent
+            self._ai_agent = ExplanationAgent()
+        else:
+            self._ai_agent = None
+
         if auto_subscribe:
             event_bus.scan_completed.connect(self._on_scan_completed)
 
@@ -266,6 +284,10 @@ class Classifier(QObject):
 
         self._persist_device_risk(device_event_id=device_event_id, result_payload=result_payload)
         self._emit_device_threat_if_needed(result_payload)
+        
+        if self._ai_agent:
+            self._ai_agent.request_explanation(event_id=int(device_event_id), payload=result_payload)
+            
         self.device_classified.emit(result_payload)
         return result_payload
 

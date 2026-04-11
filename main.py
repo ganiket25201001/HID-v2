@@ -35,6 +35,7 @@ except Exception:
 from core.event_bus import event_bus
 from core.usb_monitor import USBEventEmitter
 from database.db import init_db
+from ml.classifier import Classifier
 from sandbox.file_scanner import FileScanner
 from security.access_controller import AccessController
 from ui.main_window import HIDShieldMainWindow
@@ -111,11 +112,16 @@ def main() -> None:
     file_scanner = FileScanner()
     event_bus.usb_device_inserted.connect(file_scanner.scan_device)
 
+    # Instantiate ML pipeline (auto-subscribes to scan_completed)
+    ml_classifier = Classifier(auto_subscribe=True)
+
     access_controller = AccessController()
     access_controller.attach_decision_panel(window.decision_panel)
     window._access_controller = access_controller  # type: ignore[attr-defined]
 
+    # Handle graceful shutdown
     app.aboutToQuit.connect(usb_monitor.stop)
+    
     window.show()
     sys.exit(app.exec())
 

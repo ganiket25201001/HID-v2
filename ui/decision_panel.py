@@ -144,7 +144,56 @@ class DecisionPanel(QWidget):
         self.status_label.setStyleSheet(f"font-size: 13px; color: {Theme.TEXT_SECONDARY};")
         shell_layout.addWidget(self.status_label)
 
+        # AI Insight card (Enhanced)
+        self.ai_card = GlassCard(glow=True)
+        self.ai_card.setVisible(False)
+        self.ai_card.setStyleSheet(
+            f"""
+            QFrame {{
+                border: 1px solid {Theme.ACCENT_CYAN};
+                background: rgba(0, 255, 255, 10);
+            }}
+            """
+        )
+        ai_layout = QVBoxLayout(self.ai_card)
+        ai_layout.setContentsMargins(16, 14, 16, 14)
+        ai_layout.setSpacing(8)
+
+        ai_header = QHBoxLayout()
+        ai_icon = QLabel("󰚩") # Robot icon
+        ai_icon.setStyleSheet(f"font-size: 18px; color: {Theme.ACCENT_CYAN};")
+        ai_title = QLabel("GEMMA 4 ARCHITECT CORE")
+        ai_title.setStyleSheet(f"font-weight: 900; letter-spacing: 1px; color: {Theme.ACCENT_CYAN};")
+        ai_header.addWidget(ai_icon)
+        ai_header.addWidget(ai_title)
+        ai_header.addStretch()
+        
+        self.ai_summary_label = QLabel("Establishing connection to neural core...")
+        self.ai_summary_label.setWordWrap(True)
+        self.ai_summary_label.setStyleSheet(
+            f"color: {Theme.TEXT_PRIMARY}; font-family: 'Consolas'; font-size: 13px; line-height: 1.4;"
+        )
+        
+        ai_layout.addLayout(ai_header)
+        ai_layout.addWidget(self.ai_summary_label)
+        shell_layout.addWidget(self.ai_card)
+
+        # Animation state for typewriter
+        from PySide6.QtCore import QTimer
+        self._typewriter_timer = QTimer(self)
+        self._typewriter_timer.timeout.connect(self._type_next_char)
+        self._full_text = ""
+        self._current_index = 0
+
         outer.addWidget(self.shell)
+
+    def _type_next_char(self) -> None:
+        if self._current_index < len(self._full_text):
+            self._current_index += 1
+            self.ai_summary_label.setText(self._full_text[:self._current_index] + "█")
+        else:
+            self._typewriter_timer.stop()
+            self.ai_summary_label.setText(self._full_text)
 
     def _metric_card(self, title: str, color: str) -> tuple[GlassCard, QLabel]:
         card = GlassCard(glow=False)
@@ -168,6 +217,19 @@ class DecisionPanel(QWidget):
         self.close_btn.clicked.connect(self.hide)
         
         self.file_table.selection_summary_changed.connect(self._on_table_summary_changed)
+        event_bus.ai_explanation_ready.connect(self._on_ai_explanation_ready)
+
+    def _on_ai_explanation_ready(self, result: dict[str, Any]) -> None:
+        """Update DecisionPanel with AI overview and trigger typewriter animation."""
+        if result.get("status") == "success" and result.get("event_id") == self._last_event_id:
+            self.ai_card.setVisible(True)
+            self._full_text = str(result.get("explanation", ""))
+            self._current_index = 0
+            self.ai_summary_label.setText("")
+            self._typewriter_timer.start(25)  # 25ms per character
+        else:
+            self.ai_card.setVisible(False)
+            self._typewriter_timer.stop()
 
     def _on_usb_inserted(self, payload: dict[str, Any]) -> None:
         self._device_payload = dict(payload)
@@ -187,6 +249,7 @@ class DecisionPanel(QWidget):
             self._scan_files = self._load_rows_from_repo(event_id)
 
         self._apply_results()
+        self.ai_card.setVisible(False)  # Hide old explanation
         self._show_with_slide()
 
         event_bus.decision_panel_refresh_requested.emit({"event_id": event_id, "summary": summary})

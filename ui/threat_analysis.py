@@ -42,6 +42,46 @@ class ThreatAnalysisScreen(QWidget):
         root.addWidget(self.title)
         root.addWidget(self.subtitle)
 
+        # AI Insight Card (Enhanced)
+        self.ai_card = GlassCard(glow=True)
+        self.ai_card.setVisible(False)
+        self.ai_card.setStyleSheet(
+            f"""
+            QFrame {{
+                border: 1px solid {Theme.ACCENT_CYAN};
+                background: rgba(0, 255, 255, 10);
+                border-radius: 12px;
+            }}
+            """
+        )
+        ai_layout = QVBoxLayout(self.ai_card)
+        ai_layout.setContentsMargins(18, 14, 18, 14)
+        ai_layout.setSpacing(8)
+
+        ai_header = QHBoxLayout()
+        ai_header.addWidget(QLabel("󰚩"), alignment=Qt.AlignmentFlag.AlignVCenter) # Robot icon placeholder
+        ai_title = QLabel("AI SECURITY ARCHITECT")
+        ai_title.setStyleSheet(f"font-weight: 900; letter-spacing: 1px; color: {Theme.ACCENT_CYAN}; font-size: 13px;")
+        ai_header.addWidget(ai_title)
+        ai_header.addStretch()
+        
+        self.ai_text = QLabel("Initializing neural link...")
+        self.ai_text.setWordWrap(True)
+        self.ai_text.setStyleSheet(
+            f"color: {Theme.TEXT_PRIMARY}; font-family: 'Consolas'; font-size: 13px; line-height: 1.4;"
+        )
+        
+        ai_layout.addLayout(ai_header)
+        ai_layout.addWidget(self.ai_text)
+        root.addWidget(self.ai_card)
+
+        # Animation state
+        from PySide6.QtCore import QTimer
+        self._typewriter_timer = QTimer(self)
+        self._typewriter_timer.timeout.connect(self._type_next_char)
+        self._full_text = ""
+        self._current_index = 0
+
         top = QHBoxLayout()
         top.setSpacing(14)
 
@@ -109,7 +149,28 @@ class ThreatAnalysisScreen(QWidget):
     def _wire_signals(self) -> None:
         self.tree.file_selected.connect(self.detail.update_details)
         event_bus.scan_completed.connect(self._on_scan_completed)
+        event_bus.ai_explanation_ready.connect(self._on_ai_ready)
         event_bus.threat_analysis_refresh_requested.connect(lambda payload: self._on_scan_completed(int(payload.get("event_id", 0)), payload.get("summary", {})))
+
+    def _type_next_char(self) -> None:
+        if self._current_index < len(self._full_text):
+            self._current_index += 1
+            self.ai_text.setText(self._full_text[:self._current_index] + "█")
+        else:
+            self._typewriter_timer.stop()
+            self.ai_text.setText(self._full_text)
+
+    def _on_ai_ready(self, result: dict[str, Any]) -> None:
+        """Update the top-level AI insight with neural-link animation."""
+        if result.get("status") == "success":
+            self.ai_card.setVisible(True)
+            self._full_text = str(result.get("explanation", ""))
+            self._current_index = 0
+            self.ai_text.setText("")
+            self._typewriter_timer.start(20)
+        else:
+            self.ai_card.setVisible(False)
+            self._typewriter_timer.stop()
 
     def showEvent(self, event: Any) -> None:
         super().showEvent(event)

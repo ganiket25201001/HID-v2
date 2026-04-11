@@ -58,3 +58,7 @@ installer/*.zip
 # OS files
 .DS_Store
 Thumbs.db
+
+# Models and API cache
+models/
+.ollama/

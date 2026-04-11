@@ -212,6 +212,21 @@ Bootstrap credentials used by the login flow:
 
 Change these credentials immediately in production deployments.
 
+## AI Agent (Gemma 4)
+
+HID Shield includes an optional Gen AI Agent for rich threat explanations. This feature requires **Ollama** to be installed and running on the host system.
+
+### Setup Instructions:
+
+1. **Install Ollama**: Download and install from [ollama.com](https://ollama.com).
+2. **Pull Gemma 4 Model**:
+   ```bash
+   ollama pull gemma4:e2b
+   ```
+3. **Enable in Settings**: Open HID Shield, navigate to `Settings` -> `AI Integration`, and toggle `Enable AI Explanations`.
+
+The agent runs asynchronously after the ML classification is complete, providing natural language insights into why a specific risk score was assigned.
+
 ## Packaging and Installer Assets
 
 - PyInstaller spec: build.spec

@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from ui.styles.theme import Theme
 from ui.widgets.glass_card import GlassCard
 from ui.widgets.threat_badge import ThreatBadge
+from core.event_bus import event_bus
 
 
 class _EntropyBar(QWidget):
@@ -104,7 +105,22 @@ class DetailPanel(QWidget):
         self._threat_tags: list[QLabel] = []
 
         self._build_ui()
+        self._wire_signals()
         self.show_placeholder()
+
+    def _wire_signals(self) -> None:
+        """Connect to global events for AI updates."""
+        event_bus.ai_explanation_ready.connect(self._on_ai_explanation_ready)
+
+    def _on_ai_explanation_ready(self, result: dict[str, Any]) -> None:
+        """Update the AI insight label if the current event matches."""
+        # Note: In this architecture, AI explanation is event-level.
+        # We show it if enabled and available.
+        if result.get("status") == "success":
+            self.ai_insight_card.setVisible(True)
+            self.ai_explanation_label.setText(result.get("explanation", ""))
+        else:
+            self.ai_insight_card.setVisible(False)
 
     # ------------------------------------------------------------------
     # UI
@@ -128,6 +144,28 @@ class DetailPanel(QWidget):
         root.setSpacing(12)
         scroll.setWidget(content)
         outer.addWidget(scroll)
+
+        # AI Insight card (New)
+        self.ai_insight_card = GlassCard(glow=True)
+        self.ai_insight_card.setVisible(False)
+        ai_layout = QVBoxLayout(self.ai_insight_card)
+        ai_layout.setContentsMargins(18, 16, 18, 16)
+        ai_layout.setSpacing(8)
+
+        ai_header = QHBoxLayout()
+        ai_title = QLabel("Gemma 4 AI Insight")
+        ai_title.setProperty("class", "h2")
+        ai_title.setStyleSheet(f"color: {Theme.ACCENT_CYAN};")
+        ai_header.addWidget(ai_title)
+        ai_header.addStretch()
+        
+        ai_layout.addLayout(ai_header)
+        self.ai_explanation_label = QLabel("Analyzing threat patterns...")
+        self.ai_explanation_label.setWordWrap(True)
+        self.ai_explanation_label.setStyleSheet(f"color: {Theme.TEXT_PRIMARY}; font-style: italic; line-height: 1.4;")
+        ai_layout.addWidget(self.ai_explanation_label)
+        
+        root.addWidget(self.ai_insight_card)
 
         # Metadata card
         meta_card = GlassCard(glow=False)

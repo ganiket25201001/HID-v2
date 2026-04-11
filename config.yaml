@@ -1,94 +1,61 @@
-# =============================================================================
-# HID Shield - Production Configuration
-# =============================================================================
-
-# --- Application Metadata ---
 app:
-  name: "HID Shield"
-  version: "1.0.0"
-  description: "Intelligent USB Security System"
+  name: HID Shield
+  version: 1.0.0
+  description: Intelligent USB Security System
   window_width: 1280
   window_height: 800
   min_window_width: 960
   min_window_height: 640
-
-# --- Security Policy Defaults ---
 policy:
-  # Action taken when an unknown HID device is plugged in.
-  default_action: "prompt"
-
-  # Entropy threshold (normalized 0.0–1.0 scale, maps to 0–8 bits).
-  # 0.9 = 7.2 bits on the raw Shannon scale → SUSPICIOUS flag.
+  default_action: prompt
   entropy_threshold: 0.9
-
-  # Keystroke rate thresholds (keystrokes per second).
-  # Two-tier system: > 20 KPS = SUSPICIOUS, ≥ 80 KPS = MALICIOUS.
   max_keystroke_rate: 20
   malicious_keystroke_rate: 80
-
   cooldown_seconds: 30
-
-  # Privacy-sensitive; keep false in production unless needed.
-  log_keystrokes: false
-
-  # PE signature detection (MZ header at offset 0)
+  log_keystrokes: true
   pe_signature_check: true
-
-  # ML confidence threshold for MALICIOUS classification.
   ml_malicious_confidence_threshold: 0.85
-
 # --- Windows Sandbox Isolation ---
 windows_sandbox:
-  # Set true to prefer Windows Sandbox for analysis workflows.
   enabled: true
-
-  # Detach drive letter immediately when a USB storage mount is detected.
-  # The volume remains accessible via \\?\Volume{GUID}\ for privileged scanning.
   isolate_drive_letter_on_insert: true
-
-  # Upper bound wait time for sandbox result JSON output.
   timeout_seconds: 240
-
-  # Fail-closed behavior: if sandbox scan is unavailable, device remains blocked.
   require_windows_sandbox: true
-
-  # Keep per-session artifacts for debugging (wsb, scripts, outputs).
   keep_artifacts: false
-
-  # Optional host-side close after result extraction.
-  # Keep false to avoid abrupt Windows Sandbox disconnect popups.
   close_after_analysis: false
-
-  # Host-side staging root used for sandbox mapped folders.
   host_staging_root: "C:/ProgramData/HIDShield/sandbox_bridge"
 
-# --- Database ---
+# --- AI Integration ---
+ai_agent:
+  enabled: true
+  model: "gemma4:e2b"
 database:
-  path: "hid_shield.db"
+  path: hid_shield.db
   echo: false
-
-# --- Logging ---
 logging:
-  level: "INFO"
-  file: "hid_shield.log"
-  rotation: "10 MB"
-  retention: "30 days"
-
-# --- UI / Theme ---
+  level: INFO
+  file: hid_shield.log
+  rotation: 10 MB
+  retention: 30 days
 theme:
-  bg_primary: "#0a0e17"
-  bg_secondary: "#111827"
-  bg_tertiary: "#1a1f2e"
-  accent_cyan: "#00d4ff"
-  accent_magenta: "#ff006e"
-  accent_green: "#00ff88"
-  accent_amber: "#ffb800"
-  text_primary: "#e2e8f0"
-  text_secondary: "#94a3b8"
-  text_disabled: "#475569"
-  border: "#1e293b"
-  glow_cyan: "rgba(0,212,255,0.15)"
-  glow_magenta: "rgba(255,0,110,0.15)"
-
-  font_family: "Segoe UI"
+  bg_primary: '#0a0e17'
+  bg_secondary: '#111827'
+  bg_tertiary: '#1a1f2e'
+  accent_cyan: '#00d4ff'
+  accent_magenta: '#ff006e'
+  accent_green: '#00ff88'
+  accent_amber: '#ffb800'
+  text_primary: '#e2e8f0'
+  text_secondary: '#94a3b8'
+  text_disabled: '#475569'
+  border: '#1e293b'
+  glow_cyan: rgba(0,212,255,0.15)
+  glow_magenta: rgba(255,0,110,0.15)
+  font_family: Segoe UI
   font_size_base: 14
+security:
+  session_timeout_minutes: 15
+notifications:
+  sound_enabled: true
+  toast_enabled: true
+  min_severity: warning

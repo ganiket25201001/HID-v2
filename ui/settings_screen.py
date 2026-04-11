@@ -151,12 +151,14 @@ class SettingsScreen(QWidget):
         self.cooldown_spin.setRange(0, 3600)
 
         self.log_keystrokes_check = QCheckBox("Enable keystroke logging")
+        self.enable_ai_agent_check = QCheckBox("Enable AI Explanations (Gemma 4)")
 
         form.addRow("Default Action", self.default_action_combo)
         form.addRow("Entropy Threshold", self.entropy_spin)
         form.addRow("Max Keystrokes / sec", self.max_kps_spin)
         form.addRow("Cooldown Seconds", self.cooldown_spin)
         form.addRow("Privacy", self.log_keystrokes_check)
+        form.addRow("AI Integration", self.enable_ai_agent_check)
 
         layout.addWidget(card)
         layout.addStretch(1)
@@ -311,6 +313,7 @@ class SettingsScreen(QWidget):
         self.max_kps_spin.setValue(int(policy_cfg.get("max_keystroke_rate", 80)))
         self.cooldown_spin.setValue(int(policy_cfg.get("cooldown_seconds", 30)))
         self.log_keystrokes_check.setChecked(bool(policy_cfg.get("log_keystrokes", False)))
+        self.enable_ai_agent_check.setChecked(bool(policy_cfg.get("enable_ai_agent", False)))
 
         timeout_minutes = int(security_cfg.get("session_timeout_minutes", 15))
         self.session_timeout_spin.setValue(timeout_minutes)
@@ -356,6 +359,7 @@ class SettingsScreen(QWidget):
         self._config["policy"]["max_keystroke_rate"] = int(self.max_kps_spin.value())
         self._config["policy"]["cooldown_seconds"] = int(self.cooldown_spin.value())
         self._config["policy"]["log_keystrokes"] = bool(self.log_keystrokes_check.isChecked())
+        self._config["policy"]["enable_ai_agent"] = bool(self.enable_ai_agent_check.isChecked())
 
         self._config["security"]["session_timeout_minutes"] = int(self.session_timeout_spin.value())
 
