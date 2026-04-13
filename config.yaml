@@ -15,6 +15,7 @@ policy:
   log_keystrokes: true
   pe_signature_check: true
   ml_malicious_confidence_threshold: 0.85
+  enable_ai_agent: true
 # --- Windows Sandbox Isolation ---
 windows_sandbox:
   enabled: true
@@ -28,7 +29,15 @@ windows_sandbox:
 # --- AI Integration ---
 ai_agent:
   enabled: true
-  model: "gemma4:e2b"
+  text_model: "qwen2.5-coder:7b"
+  vision_model: "qwen2.5vl:7b"
+  embeddings_model: "nomic-embed-text"
+  timeout_seconds: 20
+  temperature: 0.2
+  top_p: 0.9
+  embedding_index_path: "database/ai_case_embeddings.jsonl"
+  max_text_chars: 4500
+  max_files_per_event: 30
 database:
   path: hid_shield.db
   echo: false

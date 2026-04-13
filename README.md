@@ -86,6 +86,7 @@ Important sections:
 
 - app: metadata and window sizing
 - policy: entropy and keystroke thresholds, default action, confidence thresholds
+- ai_agent: local Ollama model names, timeout, sampling, and embedding index settings
 - windows_sandbox: sandbox-first scan settings, host staging root, timeout, mount isolation toggle, close behavior
 - database: sqlite path
 - logging: file path and retention settings
@@ -195,6 +196,7 @@ Test suite is in tests/ and includes:
 - PE analyzer
 - USB monitor flows
 - integration scenarios
+- AI routing, advisory fallback behavior, structured parsing, and local retrieval
 
 Run all tests:
 
@@ -212,20 +214,37 @@ Bootstrap credentials used by the login flow:
 
 Change these credentials immediately in production deployments.
 
-## AI Agent (Gemma 4)
+## AI Advisory Layer (Local Ollama)
 
-HID Shield includes an optional Gen AI Agent for rich threat explanations. This feature requires **Ollama** to be installed and running on the host system.
+HID Shield includes an optional advisory AI layer for threat triage. It does not replace sandbox, ML, hashing, or policy decisions. Deterministic evidence remains authoritative.
 
-### Setup Instructions:
+### Model Roles (Recommended)
 
-1. **Install Ollama**: Download and install from [ollama.com](https://ollama.com).
-2. **Pull Gemma 4 Model**:
+- Text reasoning: `qwen2.5-coder:7b`
+- Vision/document/image analysis: `qwen2.5vl:7b`
+- Embeddings/retrieval: `nomic-embed-text`
+
+### Setup Instructions
+
+1. Install Ollama from [ollama.com](https://ollama.com).
+2. Pull local models:
    ```bash
-   ollama pull gemma4:e2b
+   ollama pull qwen2.5-coder:7b
+   ollama pull qwen2.5vl:7b
+   ollama pull nomic-embed-text
    ```
-3. **Enable in Settings**: Open HID Shield, navigate to `Settings` -> `AI Integration`, and toggle `Enable AI Explanations`.
+3. Open Settings -> Policy Configuration -> AI Integration:
+- Enable AI advisory explanations
+- Set text, vision, and embeddings model names
+- Set timeout, temperature, and top_p
+- Use Test Connection to validate local Ollama availability
 
-The agent runs asynchronously after the ML classification is complete, providing natural language insights into why a specific risk score was assigned.
+### Advisory Flow
+
+- File-type routing is handled for images, PDFs, executables, archives, text/log files, videos, and unknown files.
+- Application code extracts metadata, hashes, strings/text, archive listings, and optional image/PDF/video artifacts.
+- Extracted content is treated as untrusted, prompt-injection markers are flagged, and advisory prompts are grounded in scanner + ML + policy signals.
+- Local embedding search is used to retrieve similar prior cases from a local index.
 
 ## Packaging and Installer Assets
 

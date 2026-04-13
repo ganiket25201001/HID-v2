@@ -26,6 +26,7 @@ class ThreatAnalysisScreen(QWidget):
         super().__init__(parent)
         self._rows: list[dict[str, Any]] = []
         self._device_info: dict[str, Any] = {}
+        self._active_event_id: int = 0
         self._build_ui()
         self._wire_signals()
 
@@ -148,6 +149,7 @@ class ThreatAnalysisScreen(QWidget):
 
     def _wire_signals(self) -> None:
         self.tree.file_selected.connect(self.detail.update_details)
+        event_bus.scan_started.connect(self._on_scan_started)
         event_bus.scan_completed.connect(self._on_scan_completed)
         event_bus.ai_explanation_ready.connect(self._on_ai_ready)
         event_bus.threat_analysis_refresh_requested.connect(lambda payload: self._on_scan_completed(int(payload.get("event_id", 0)), payload.get("summary", {})))
@@ -175,9 +177,25 @@ class ThreatAnalysisScreen(QWidget):
     def showEvent(self, event: Any) -> None:
         super().showEvent(event)
         if not self._rows:
-            self._load_latest_from_db()
+            self._apply_rows([])
+
+    def _on_scan_started(self, event_id: int) -> None:
+        """Clear current analysis view when a new USB scan starts."""
+        if int(event_id) <= 0:
+            return
+        self._active_event_id = int(event_id)
+        self._rows = []
+        self._device_info = {}
+        self._apply_rows([])
+        self.subtitle.setText(f"Scanning in progress (event #{self._active_event_id})")
+        self.ai_card.setVisible(False)
+        self._typewriter_timer.stop()
 
     def _on_scan_completed(self, event_id: int, summary: dict[str, Any]) -> None:
+        if int(event_id) <= 0:
+            return
+        self._active_event_id = int(event_id)
+
         data = summary if isinstance(summary, dict) else {}
         device = data.get("device")
         if isinstance(device, dict):
@@ -195,15 +213,18 @@ class ThreatAnalysisScreen(QWidget):
         self._apply_rows(normalized)
 
     def _load_latest_from_db(self) -> None:
-        self._apply_rows(self._load_rows_for_event(0))
+        # Threat Analysis intentionally avoids loading historical scans on open.
+        self._apply_rows([])
 
     def _load_rows_for_event(self, event_id: int) -> list[dict[str, Any]]:
+        if int(event_id) <= 0:
+            return []
+
         out: list[dict[str, Any]] = []
         try:
             with get_db() as session:
                 query = session.query(FileScanResult)
-                if event_id > 0:
-                    query = query.filter(FileScanResult.device_event_id == event_id)
+                query = query.filter(FileScanResult.device_event_id == int(event_id))
                 rows = query.order_by(FileScanResult.id.desc()).limit(500).all()
                 for r in rows:
                     out.append(
@@ -234,6 +255,8 @@ class ThreatAnalysisScreen(QWidget):
 
         if self._rows:
             self.detail.update_details(self._rows[0])
+        else:
+            self.detail.show_placeholder()
 
         device_name = str(self._device_info.get("device_name") or "USB Device")
         serial = str(self._device_info.get("serial_number") or self._device_info.get("serial") or "n/a")

@@ -162,7 +162,7 @@ class DecisionPanel(QWidget):
         ai_header = QHBoxLayout()
         ai_icon = QLabel("󰚩") # Robot icon
         ai_icon.setStyleSheet(f"font-size: 18px; color: {Theme.ACCENT_CYAN};")
-        ai_title = QLabel("GEMMA 4 ARCHITECT CORE")
+        ai_title = QLabel("AI SECURITY ADVISORY")
         ai_title.setStyleSheet(f"font-weight: 900; letter-spacing: 1px; color: {Theme.ACCENT_CYAN};")
         ai_header.addWidget(ai_icon)
         ai_header.addWidget(ai_title)

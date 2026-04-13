@@ -180,12 +180,9 @@ class Classifier(QObject):
         # Check AI integration flag
         self._ai_enabled = False
         try:
-            import yaml
-            cfg_path = Path(__file__).resolve().parent.parent / "config.yaml"
-            if cfg_path.exists():
-                with cfg_path.open() as f:
-                    cfg = yaml.safe_load(f) or {}
-                    self._ai_enabled = bool(cfg.get("policy", {}).get("enable_ai_agent", False))
+            from ai_agent.config import load_ai_settings
+
+            self._ai_enabled = bool(load_ai_settings().enabled)
         except Exception:
             pass
             
@@ -209,6 +206,7 @@ class Classifier(QObject):
             device_context=device_context,
         )
         result = self._backend.classify_features(features)
+        raw_context = self._extract_scan_context(scan_result)
 
         payload = {
             "level": result.level.value,
@@ -221,6 +219,7 @@ class Classifier(QObject):
             "risk_level": self._THREAT_TO_RISK[result.level],
             "file_name": self._extract_name(scan_result),
             "file_path": self._extract_path(scan_result),
+            **raw_context,
         }
 
         if result.level in {ThreatLevel.DANGEROUS, ThreatLevel.CRITICAL}:
@@ -428,3 +427,38 @@ class Classifier(QObject):
             return None
         text = str(value).strip()
         return text if text else None
+
+    def _extract_scan_context(self, scan_result: Mapping[str, Any] | Any) -> dict[str, Any]:
+        """Preserve deterministic scanner metadata for advisory AI grounding."""
+        row = dict(scan_result) if isinstance(scan_result, Mapping) else {}
+
+        def _safe_float(value: Any, default: float = 0.0) -> float:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        def _safe_int(value: Any, default: int = 0) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+
+        pe_payload = row.get("pe") if isinstance(row.get("pe"), Mapping) else {}
+        heuristics_payload = row.get("heuristics") if isinstance(row.get("heuristics"), Mapping) else {}
+
+        return {
+            "mime_type": str(row.get("mime_type") or ""),
+            "size": _safe_int(row.get("size") or row.get("file_size_bytes"), 0),
+            "sha256": str(row.get("sha256") or row.get("sha256_hash") or "").strip(),
+            "md5": str(row.get("md5") or row.get("md5_hash") or "").strip(),
+            "entropy": _safe_float(row.get("entropy"), 0.0),
+            "entropy_classification": str(row.get("entropy_classification") or ""),
+            "entropy_explanation": str(row.get("entropy_explanation") or ""),
+            "pe": dict(pe_payload),
+            "heuristics": dict(heuristics_payload),
+            "threat_name": str(row.get("threat_name") or ""),
+            "notes": str(row.get("notes") or ""),
+            "scan_engine": str(row.get("scan_engine") or "HIDShield Sandbox v1"),
+            "file_type": str(row.get("file_type") or ""),
+        }

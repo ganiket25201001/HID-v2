@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
@@ -23,6 +24,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ai_agent.advisory_service import AdvisoryAIService
+from ai_agent.config import AISettings, apply_ai_settings_to_config, load_ai_settings
 from core.event_bus import event_bus
 from core.usb_monitor import USBEventEmitter
 from database.db import get_db
@@ -151,7 +154,39 @@ class SettingsScreen(QWidget):
         self.cooldown_spin.setRange(0, 3600)
 
         self.log_keystrokes_check = QCheckBox("Enable keystroke logging")
-        self.enable_ai_agent_check = QCheckBox("Enable AI Explanations (Gemma 4)")
+        self.enable_ai_agent_check = QCheckBox("Enable AI advisory explanations")
+
+        self.ai_text_model_edit = QLineEdit(self)
+        self.ai_text_model_edit.setPlaceholderText("qwen2.5-coder:7b")
+        self.ai_vision_model_edit = QLineEdit(self)
+        self.ai_vision_model_edit.setPlaceholderText("qwen2.5vl:7b")
+        self.ai_embeddings_model_edit = QLineEdit(self)
+        self.ai_embeddings_model_edit.setPlaceholderText("nomic-embed-text")
+
+        self.ai_timeout_spin = QSpinBox(self)
+        self.ai_timeout_spin.setRange(3, 180)
+
+        self.ai_temperature_spin = QDoubleSpinBox(self)
+        self.ai_temperature_spin.setRange(0.0, 2.0)
+        self.ai_temperature_spin.setSingleStep(0.05)
+        self.ai_temperature_spin.setDecimals(2)
+
+        self.ai_top_p_spin = QDoubleSpinBox(self)
+        self.ai_top_p_spin.setRange(0.05, 1.0)
+        self.ai_top_p_spin.setSingleStep(0.05)
+        self.ai_top_p_spin.setDecimals(2)
+
+        self.ai_test_btn = QPushButton("Test Connection")
+        self.ai_test_btn.clicked.connect(self._test_ai_connection)
+        self.ai_connection_status = QLabel("Status: not tested")
+        self.ai_connection_status.setStyleSheet(f"color: {Theme.TEXT_SECONDARY};")
+
+        ai_test_row = QWidget(self)
+        ai_test_layout = QHBoxLayout(ai_test_row)
+        ai_test_layout.setContentsMargins(0, 0, 0, 0)
+        ai_test_layout.setSpacing(8)
+        ai_test_layout.addWidget(self.ai_test_btn)
+        ai_test_layout.addWidget(self.ai_connection_status, stretch=1)
 
         form.addRow("Default Action", self.default_action_combo)
         form.addRow("Entropy Threshold", self.entropy_spin)
@@ -159,6 +194,13 @@ class SettingsScreen(QWidget):
         form.addRow("Cooldown Seconds", self.cooldown_spin)
         form.addRow("Privacy", self.log_keystrokes_check)
         form.addRow("AI Integration", self.enable_ai_agent_check)
+        form.addRow("Text Model", self.ai_text_model_edit)
+        form.addRow("Vision Model", self.ai_vision_model_edit)
+        form.addRow("Embeddings Model", self.ai_embeddings_model_edit)
+        form.addRow("AI Timeout (s)", self.ai_timeout_spin)
+        form.addRow("AI Temperature", self.ai_temperature_spin)
+        form.addRow("AI top_p", self.ai_top_p_spin)
+        form.addRow("AI Connection", ai_test_row)
 
         layout.addWidget(card)
         layout.addStretch(1)
@@ -313,7 +355,17 @@ class SettingsScreen(QWidget):
         self.max_kps_spin.setValue(int(policy_cfg.get("max_keystroke_rate", 80)))
         self.cooldown_spin.setValue(int(policy_cfg.get("cooldown_seconds", 30)))
         self.log_keystrokes_check.setChecked(bool(policy_cfg.get("log_keystrokes", False)))
-        self.enable_ai_agent_check.setChecked(bool(policy_cfg.get("enable_ai_agent", False)))
+
+        ai_settings = load_ai_settings(self._config_path)
+        self.enable_ai_agent_check.setChecked(bool(ai_settings.enabled))
+        self.ai_text_model_edit.setText(ai_settings.text_model)
+        self.ai_vision_model_edit.setText(ai_settings.vision_model)
+        self.ai_embeddings_model_edit.setText(ai_settings.embeddings_model)
+        self.ai_timeout_spin.setValue(int(ai_settings.timeout_seconds))
+        self.ai_temperature_spin.setValue(float(ai_settings.temperature))
+        self.ai_top_p_spin.setValue(float(ai_settings.top_p))
+        self.ai_connection_status.setText("Status: not tested")
+        self.ai_connection_status.setStyleSheet(f"color: {Theme.TEXT_SECONDARY};")
 
         timeout_minutes = int(security_cfg.get("session_timeout_minutes", 15))
         self.session_timeout_spin.setValue(timeout_minutes)
@@ -359,7 +411,9 @@ class SettingsScreen(QWidget):
         self._config["policy"]["max_keystroke_rate"] = int(self.max_kps_spin.value())
         self._config["policy"]["cooldown_seconds"] = int(self.cooldown_spin.value())
         self._config["policy"]["log_keystrokes"] = bool(self.log_keystrokes_check.isChecked())
-        self._config["policy"]["enable_ai_agent"] = bool(self.enable_ai_agent_check.isChecked())
+
+        ai_settings = self._collect_ai_settings_from_form()
+        self._config = apply_ai_settings_to_config(self._config, ai_settings)
 
         self._config["security"]["session_timeout_minutes"] = int(self.session_timeout_spin.value())
 
@@ -400,6 +454,43 @@ class SettingsScreen(QWidget):
 
         self._auth_manager.set_new_pin(pin_a)
         return True
+
+    def _collect_ai_settings_from_form(self) -> AISettings:
+        """Collect AI settings from form controls with safe defaults."""
+        text_model = self.ai_text_model_edit.text().strip() or AISettings.text_model
+        vision_model = self.ai_vision_model_edit.text().strip() or AISettings.vision_model
+        embeddings_model = self.ai_embeddings_model_edit.text().strip() or AISettings.embeddings_model
+
+        return AISettings(
+            enabled=bool(self.enable_ai_agent_check.isChecked()),
+            text_model=text_model,
+            vision_model=vision_model,
+            embeddings_model=embeddings_model,
+            timeout_seconds=int(self.ai_timeout_spin.value()),
+            temperature=float(self.ai_temperature_spin.value()),
+            top_p=float(self.ai_top_p_spin.value()),
+        )
+
+    def _test_ai_connection(self) -> None:
+        """Run local Ollama connection test with currently entered AI settings."""
+        self.ai_connection_status.setText("Status: testing...")
+        self.ai_connection_status.setStyleSheet(f"color: {Theme.TEXT_SECONDARY};")
+        QApplication.processEvents()
+
+        try:
+            service = AdvisoryAIService(settings=self._collect_ai_settings_from_form())
+            result = service.test_connection()
+            ok = bool(result.get("ok", False))
+            detail = str(result.get("detail", "No response"))
+            if ok:
+                self.ai_connection_status.setText(f"Status: OK - {detail}")
+                self.ai_connection_status.setStyleSheet(f"color: {Theme.ACCENT_GREEN};")
+            else:
+                self.ai_connection_status.setText(f"Status: unavailable - {detail}")
+                self.ai_connection_status.setStyleSheet(f"color: {Theme.ACCENT_AMBER};")
+        except Exception as exc:
+            self.ai_connection_status.setText(f"Status: error - {exc}")
+            self.ai_connection_status.setStyleSheet(f"color: {Theme.ACCENT_MAGENTA};")
 
     def _apply_runtime_settings(self) -> None:
         """Apply settings in-memory and request USB monitor restart."""

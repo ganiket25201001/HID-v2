@@ -30,12 +30,16 @@ class LogTableWidget(QTableWidget):
 
         self._all_rows: list[dict[str, Any]] = []
         self._visible_rows: list[dict[str, Any]] = []
+        self._base_headers: list[str] = []
 
         self._risk_filter: str = "all"
         self._from_date: date | None = None
         self._to_date: date | None = None
 
         self._hovered_row: int = -1
+        self._checkbox_enabled: bool = False
+        self._checkbox_header: str = "Select"
+        self._checked_row_keys: set[str] = set()
 
         self._configure_table()
 
@@ -56,6 +60,7 @@ class LogTableWidget(QTableWidget):
 
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.itemEntered.connect(self._on_item_entered)
+        self.itemChanged.connect(self._on_item_changed)
 
         self.setStyleSheet(
             f"""
@@ -89,12 +94,27 @@ class LogTableWidget(QTableWidget):
 
     def set_headers(self, headers: list[str]) -> None:
         """Set table headers and reset column count accordingly."""
-        self.setColumnCount(len(headers))
-        self.setHorizontalHeaderLabels(headers)
+        self._base_headers = list(headers)
+        if self._checkbox_enabled:
+            final_headers = [self._checkbox_header] + self._base_headers
+        else:
+            final_headers = list(self._base_headers)
+        self.setColumnCount(len(final_headers))
+        self.setHorizontalHeaderLabels(final_headers)
+
+    def enable_checkboxes(self, enabled: bool, header: str = "Select") -> None:
+        """Enable optional row checkboxes used for selective export actions."""
+        self._checkbox_enabled = bool(enabled)
+        self._checkbox_header = str(header or "Select")
+        if self._base_headers:
+            self.set_headers(self._base_headers)
+        self.apply_filters()
 
     def set_rows(self, rows: list[dict[str, Any]]) -> None:
         """Set table source rows and apply current active filters."""
         self._all_rows = [dict(row) for row in rows]
+        valid_keys = {self._row_key(row) for row in self._all_rows}
+        self._checked_row_keys = {key for key in self._checked_row_keys if key in valid_keys}
         self.apply_filters()
 
     def set_risk_filter(self, risk_filter: str) -> None:
@@ -124,6 +144,27 @@ class LogTableWidget(QTableWidget):
         """Return currently visible rows after active filtering."""
         return [dict(row) for row in self._visible_rows]
 
+    def get_checked_visible_rows(self) -> list[dict[str, Any]]:
+        """Return only checked rows currently visible after filtering."""
+        return [
+            dict(row)
+            for row in self._visible_rows
+            if self._row_key(row) in self._checked_row_keys
+        ]
+
+    def select_all_visible_rows(self) -> None:
+        """Mark all currently visible rows as checked."""
+        if not self._checkbox_enabled:
+            return
+        for row in self._visible_rows:
+            self._checked_row_keys.add(self._row_key(row))
+        self._render_visible_rows()
+
+    def clear_all_checked_rows(self) -> None:
+        """Uncheck all rows in the table."""
+        self._checked_row_keys.clear()
+        self._render_visible_rows()
+
     # ------------------------------------------------------------------
     # Rendering
     # ------------------------------------------------------------------
@@ -137,15 +178,33 @@ class LogTableWidget(QTableWidget):
             row_idx = self.rowCount()
             self.insertRow(row_idx)
 
+            offset = 0
+            if self._checkbox_enabled:
+                check_item = QTableWidgetItem("")
+                check_item.setFlags(
+                    Qt.ItemFlag.ItemIsUserCheckable
+                    | Qt.ItemFlag.ItemIsEnabled
+                    | Qt.ItemFlag.ItemIsSelectable
+                )
+                row_key = self._row_key(row_payload)
+                check_item.setCheckState(
+                    Qt.CheckState.Checked
+                    if row_key in self._checked_row_keys
+                    else Qt.CheckState.Unchecked
+                )
+                check_item.setData(Qt.ItemDataRole.UserRole, row_payload)
+                self.setItem(row_idx, 0, check_item)
+                offset = 1
+
             columns = row_payload.get("columns")
             if not isinstance(columns, list):
                 columns = []
 
-            for col_idx in range(self.columnCount()):
-                value = columns[col_idx] if col_idx < len(columns) else ""
+            for col_idx in range(len(columns)):
+                value = columns[col_idx]
                 item = QTableWidgetItem(str(value))
                 item.setData(Qt.ItemDataRole.UserRole, row_payload)
-                self.setItem(row_idx, col_idx, item)
+                self.setItem(row_idx, col_idx + offset, item)
 
             risk = str(row_payload.get("risk_level") or "low").lower()
             bg, fg = self._risk_colors(risk)
@@ -215,6 +274,23 @@ class LogTableWidget(QTableWidget):
                 row_item.setBackground(hover_bg)
                 row_item.setForeground(QColor(Theme.TEXT_PRIMARY))
 
+    def _on_item_changed(self, item: QTableWidgetItem) -> None:
+        """Track checkbox state changes for selective export."""
+        if not self._checkbox_enabled:
+            return
+        if item.column() != 0:
+            return
+
+        row_payload = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(row_payload, dict):
+            return
+
+        key = self._row_key(row_payload)
+        if item.checkState() == Qt.CheckState.Checked:
+            self._checked_row_keys.add(key)
+        else:
+            self._checked_row_keys.discard(key)
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -230,6 +306,24 @@ class LogTableWidget(QTableWidget):
             except ValueError:
                 return None
         return None
+
+    def _row_key(self, row: dict[str, Any]) -> str:
+        """Build deterministic row key used by checkbox-selection persistence."""
+        explicit = row.get("row_key")
+        if explicit is not None:
+            text = str(explicit).strip()
+            if text:
+                return text
+
+        row_id = row.get("row_id")
+        if row_id is not None:
+            return f"id:{row_id}"
+
+        timestamp = self._extract_row_datetime(row)
+        ts_key = timestamp.isoformat() if timestamp else "no-ts"
+        columns = row.get("columns") if isinstance(row.get("columns"), list) else []
+        col_key = "|".join(str(value) for value in columns[:4])
+        return f"{ts_key}|{col_key}"
 
     def _risk_colors(self, risk: str) -> tuple[QColor, QColor]:
         """Map risk level to default row background/foreground colors."""

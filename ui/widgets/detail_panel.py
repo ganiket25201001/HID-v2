@@ -153,7 +153,7 @@ class DetailPanel(QWidget):
         ai_layout.setSpacing(8)
 
         ai_header = QHBoxLayout()
-        ai_title = QLabel("Gemma 4 AI Insight")
+        ai_title = QLabel("AI Advisory Insight")
         ai_title.setProperty("class", "h2")
         ai_title.setStyleSheet(f"color: {Theme.ACCENT_CYAN};")
         ai_header.addWidget(ai_title)

@@ -47,6 +47,8 @@ class LogsScreen(QWidget):
         title.setStyleSheet(f"font-size: 26px; font-weight: 800; color: {Theme.ACCENT_CYAN};")
 
         self.export_pdf_btn = AnimatedButton("Export PDF", accent_color=Theme.ACCENT_CYAN)
+        self.select_all_btn = AnimatedButton("Select All", accent_color=Theme.ACCENT_GREEN)
+        self.clear_selection_btn = AnimatedButton("Clear Selection", accent_color=Theme.TEXT_SECONDARY)
         self.clear_logs_btn = AnimatedButton("Clear Old Logs", accent_color=Theme.ACCENT_MAGENTA)
         self.apply_date_filter_btn = AnimatedButton("Apply Date Filter", accent_color=Theme.ACCENT_AMBER)
 
@@ -63,7 +65,16 @@ class LogsScreen(QWidget):
         self.to_date_edit.setDisplayFormat("yyyy-MM-dd")
         self.to_date_edit.setDate(QDate.currentDate())
 
-        for w in (self.export_pdf_btn, self.clear_logs_btn, self.apply_date_filter_btn, self.risk_filter_combo, self.from_date_edit, self.to_date_edit):
+        for w in (
+            self.export_pdf_btn,
+            self.select_all_btn,
+            self.clear_selection_btn,
+            self.clear_logs_btn,
+            self.apply_date_filter_btn,
+            self.risk_filter_combo,
+            self.from_date_edit,
+            self.to_date_edit,
+        ):
             w.setMinimumHeight(38)
 
         bar.addWidget(title)
@@ -75,6 +86,8 @@ class LogsScreen(QWidget):
         bar.addWidget(QLabel("To"))
         bar.addWidget(self.to_date_edit)
         bar.addWidget(self.apply_date_filter_btn)
+        bar.addWidget(self.select_all_btn)
+        bar.addWidget(self.clear_selection_btn)
         bar.addWidget(self.clear_logs_btn)
         bar.addWidget(self.export_pdf_btn)
 
@@ -84,6 +97,7 @@ class LogsScreen(QWidget):
         self.device_table = LogTableWidget(self)
         self.device_table.set_headers(["Timestamp", "Device", "Type", "Risk", "Action"])
         self.file_table = LogTableWidget(self)
+        self.file_table.enable_checkboxes(True, header="Pick")
         self.file_table.set_headers(["Timestamp", "File", "Risk", "Threat", "Engine"])
         self.alert_table = LogTableWidget(self)
         self.alert_table.set_headers(["Timestamp", "Severity", "Category", "Title", "Message"])
@@ -107,6 +121,8 @@ class LogsScreen(QWidget):
 
     def _wire_signals(self) -> None:
         self.export_pdf_btn.clicked.connect(self.export_pdf_report)
+        self.select_all_btn.clicked.connect(self._select_all_file_rows)
+        self.clear_selection_btn.clicked.connect(self._clear_file_row_selection)
         self.clear_logs_btn.clicked.connect(self.clear_old_logs)
         self.apply_date_filter_btn.clicked.connect(self.apply_date_filter)
         self.risk_filter_combo.currentTextChanged.connect(self.apply_risk_filter)
@@ -170,6 +186,7 @@ class LogsScreen(QWidget):
                     ts = r.timestamp if isinstance(r.timestamp, datetime) else datetime.now()
                     out.append(
                         {
+                            "row_id": int(r.id),
                             "timestamp": ts,
                             "risk_level": str(getattr(r.risk_level, "value", r.risk_level) or "low").lower(),
                             "columns": [
@@ -256,6 +273,9 @@ class LogsScreen(QWidget):
             self.status.setText("No visible file-scan rows to export")
             return
 
+        checked_visible = self.file_table.get_checked_visible_rows()
+        rows_for_export = checked_visible if checked_visible else visible
+
         try:
             device_name = "Unknown USB Device"
             risk_level = "low"
@@ -267,7 +287,7 @@ class LogsScreen(QWidget):
                     risk_level = str(cols[3]).lower()
 
             pdf_rows: list[dict[str, Any]] = []
-            for row in visible[:300]:
+            for row in rows_for_export[:300]:
                 cols = row.get("columns", [])
                 raw = row.get("raw", {})
                 pdf_rows.append(
@@ -292,6 +312,20 @@ class LogsScreen(QWidget):
                 ml_confidence=0.78,
                 user_decision="Operator Review",
             )
-            self.status.setText(f"PDF exported: {out}")
+            if checked_visible:
+                self.status.setText(f"PDF exported ({len(rows_for_export)} selected rows): {out}")
+            else:
+                self.status.setText(f"PDF exported ({len(rows_for_export)} rows): {out}")
         except Exception as exc:
             self.status.setText(f"PDF export failed: {exc}")
+
+    def _select_all_file_rows(self) -> None:
+        """Select all currently visible file-scan rows via checkbox."""
+        self.file_table.select_all_visible_rows()
+        count = len(self.file_table.get_checked_visible_rows())
+        self.status.setText(f"Selected {count} visible file row(s)")
+
+    def _clear_file_row_selection(self) -> None:
+        """Clear all selected file-scan row checkboxes."""
+        self.file_table.clear_all_checked_rows()
+        self.status.setText("Cleared file-row selection")
