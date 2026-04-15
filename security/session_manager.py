@@ -220,6 +220,7 @@ class SessionManager:
             ``True`` if the session was active and just timed out;
             ``False`` if the session is still valid or was already in GUEST.
         """
+        should_end = False
         with self._lock:
             if self._mode == UserMode.GUEST:
                 return False
@@ -227,13 +228,13 @@ class SessionManager:
                 time.monotonic() - self._last_activity
             ) / 60.0
             if elapsed_minutes >= self._timeout_minutes:
-                # Capture the mode before clearing
+                should_end = True
                 print(
                     f"[SESSION] Session timed out after "
                     f"{elapsed_minutes:.1f} min — reverting to GUEST."
                 )
 
-        if elapsed_minutes >= self._timeout_minutes:
+        if should_end:
             self.end_session()
             return True
         return False

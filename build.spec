@@ -37,6 +37,11 @@ config_file = project_dir / "config.yaml"
 if config_file.exists():
     datas.append((str(config_file), "."))
 
+# Bundle QSS theme stylesheet
+styles_dir = project_dir / "ui" / "styles"
+if styles_dir.exists():
+    datas.append((str(styles_dir), "ui/styles"))
+
 datas += collect_data_files("reportlab")
 datas += collect_data_files("dotenv")
 datas += collect_data_files("PySide6")

@@ -73,13 +73,17 @@ def _get_db_path() -> Path:
 
 
 def _is_simulation_mode() -> bool:
-    """Return True when the app is in simulation mode."""
+    """Return True when the app is in simulation mode.
+
+    Security: defaults to False (production) when config is unavailable
+    to prevent accidental dev-PIN exposure in degraded deployments.
+    """
     env_val = os.getenv("HID_SHIELD_SIMULATION_MODE", "").lower()
     if env_val in ("true", "1", "yes"):
         return True
     if env_val in ("false", "0", "no"):
         return False
-    return bool(_load_config().get("simulation_mode", True))
+    return bool(_load_config().get("simulation_mode", False))
 
 
 # ---------------------------------------------------------------------------
@@ -138,9 +142,17 @@ class AuthManager:
     _KEY_PASSWORD_HASH: str = "password_hash"
     _KEY_SECURITY_KEY_HASH: str = "security_key_hash"
 
+    # Security: First-run credentials are randomly generated per-install.
+    # The operator MUST complete the setup wizard to set real credentials.
     _DEFAULT_ADMIN_USERNAME: str = "admin"
-    _DEFAULT_ADMIN_PASSWORD: str = "admin"
-    _DEFAULT_SECURITY_KEY: str = "admin"
+    _DEFAULT_ADMIN_PASSWORD: str = ""
+    _DEFAULT_SECURITY_KEY: str = ""
+
+    @staticmethod
+    def _generate_initial_secret(length: int = 24) -> str:
+        """Generate a cryptographically random initial secret."""
+        import secrets
+        return secrets.token_urlsafe(length)
 
     def __init__(
         self,
@@ -301,23 +313,37 @@ class AuthManager:
         return not (username and password_hash and security_key_hash)
 
     def create_default_admin(self) -> None:
-        """Create default first-run administrator and security key records."""
+        """Create first-run administrator with randomly generated credentials.
+
+        Security: Credentials are generated per-install using
+        ``secrets.token_urlsafe``. The operator MUST complete the setup
+        wizard to set real credentials before enforcement is active.
+        """
         self._set_value(self._KEY_USERNAME, self._DEFAULT_ADMIN_USERNAME)
 
-        password_hash = self._hash_secret(self._DEFAULT_ADMIN_PASSWORD)
+        # Generate unique initial password and security key per installation.
+        initial_password = self._generate_initial_secret()
+        initial_security_key = self._generate_initial_secret()
+
+        password_hash = self._hash_secret(initial_password)
         self._set_value(self._KEY_PASSWORD_HASH, password_hash)
         # Keep legacy key populated so old recovery paths remain valid.
         self._set_value(self._KEY_MASTER_HASH, password_hash)
 
-        security_hash = self._hash_secret(self._DEFAULT_SECURITY_KEY)
+        security_hash = self._hash_secret(initial_security_key)
         self._set_value(self._KEY_SECURITY_KEY_HASH, security_hash)
 
         if self._get_value(self._KEY_PIN_HASH) is None:
-            self.set_new_pin(_SIM_DEV_PIN)
+            if self.simulation_mode:
+                self.set_new_pin(_SIM_DEV_PIN)
+            else:
+                # Production: no default PIN — setup wizard required.
+                self._set_value(self._KEY_FIRST_RUN, "false")
         else:
             self._set_value(self._KEY_FIRST_RUN, "true")
 
-        print("[AUTH] First-run bootstrap complete: default admin credentials created.")
+        print("[AUTH] First-run bootstrap complete: randomized initial credentials created.")
+        print("[AUTH] IMPORTANT: Operator must complete setup wizard to set permanent credentials.")
 
     def sign_up(
         self,

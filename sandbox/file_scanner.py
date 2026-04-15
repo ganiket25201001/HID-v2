@@ -376,6 +376,29 @@ class FileScanner(QObject):
         device_dict: dict[str, Any],
     ) -> dict[str, Any]:
         """Perform MIME, entropy, PE, and heuristic checks for one file."""
+        # VULN-006: Enforce max file size to prevent memory exhaustion.
+        _MAX_SCAN_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+        try:
+            file_size = file_path.stat().st_size
+        except OSError:
+            file_size = 0
+        if file_size > _MAX_SCAN_FILE_SIZE:
+            print(
+                f"[SCANNER] Skipping oversized file ({file_size / (1024*1024):.1f} MB): "
+                f"{source_path.name}"
+            )
+            return {
+                "file_path": str(source_path),
+                "file_name": source_path.name,
+                "file_size_bytes": file_size,
+                "risk_level": "medium",
+                "threat_name": "oversized_file",
+                "notes": f"File exceeds max scan size ({_MAX_SCAN_FILE_SIZE // (1024*1024)} MB). Skipped.",
+                "sha256": "",
+                "md5": "",
+                "skipped": True,
+            }
+
         file_bytes = file_path.read_bytes()
         sha256_hash = hashlib.sha256(file_bytes).hexdigest()
         md5_hash = hashlib.md5(file_bytes).hexdigest()  # noqa: S324 - legacy display compatibility

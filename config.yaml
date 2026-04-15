@@ -6,6 +6,7 @@ app:
   window_height: 800
   min_window_width: 960
   min_window_height: 640
+simulation_mode: false
 policy:
   default_action: prompt
   entropy_threshold: 0.9
@@ -30,9 +31,9 @@ windows_sandbox:
 ai_agent:
   enabled: true
   text_model: "qwen2.5-coder:7b"
-  vision_model: "qwen2.5vl:7b"
+  vision_model: "llava:7b"
   embeddings_model: "nomic-embed-text"
-  timeout_seconds: 20
+  timeout_seconds: 120
   temperature: 0.2
   top_p: 0.9
   embedding_index_path: "database/ai_case_embeddings.jsonl"

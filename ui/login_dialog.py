@@ -39,7 +39,45 @@ class LoginDialog(QDialog):
         self.setWindowTitle("HID Shield Authentication")
         self.setModal(True)
         self.setMinimumWidth(620)
-        self.setStyleSheet(f"background-color: {Theme.BG_PRIMARY};")
+        self.setStyleSheet(f"""
+            background-color: {Theme.BG_PRIMARY};
+            QLineEdit {{
+                background-color: rgba(10, 18, 34, 0.95);
+                color: {Theme.TEXT_PRIMARY};
+                border: 1px solid {Theme.BORDER};
+                border-radius: 8px;
+                padding: 8px 10px;
+                font-size: 14px;
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {Theme.ACCENT_CYAN};
+                background-color: rgba(8, 22, 40, 0.98);
+                color: {Theme.TEXT_PRIMARY};
+            }}
+            QTabWidget::pane {{
+                border: 1px solid {Theme.BORDER};
+                border-radius: 8px;
+                background: transparent;
+            }}
+            QTabBar::tab {{
+                background: {Theme.BG_SECONDARY};
+                color: {Theme.TEXT_SECONDARY};
+                padding: 10px 24px;
+                border: 1px solid {Theme.BORDER};
+                border-bottom: none;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                font-weight: 600;
+            }}
+            QTabBar::tab:selected {{
+                background: {Theme.BG_TERTIARY};
+                color: {Theme.ACCENT_CYAN};
+                border-bottom: 2px solid {Theme.ACCENT_CYAN};
+            }}
+            QCheckBox {{
+                color: {Theme.TEXT_SECONDARY};
+            }}
+        """)
 
         self._build_ui()
 
@@ -66,7 +104,8 @@ class LoginDialog(QDialog):
         divider.setStyleSheet(f"color: {Theme.BORDER}; background: {Theme.BORDER}; max-height: 1px;")
         root.addWidget(divider)
 
-        tabs = QTabWidget(self)
+        self._tabs = QTabWidget(self)
+        tabs = self._tabs
 
         login_card = GlassCard(glow=True)
         login_form = QFormLayout(login_card)
@@ -232,7 +271,16 @@ class LoginDialog(QDialog):
             QMessageBox.warning(self, "Invalid Input", str(exc))
             return
 
-        QMessageBox.information(self, "Signup Complete", "Account saved. You can now log in.")
+        # Auto-fill login fields and switch to Login tab for convenience.
+        self.login_username_input.setText(username)
+        self.login_password_input.clear()
+        self.login_security_key_input.setText(security_key)
+        self._tabs.setCurrentIndex(0)
+
+        QMessageBox.information(
+            self, "Signup Complete",
+            "Account saved successfully!\n\nYou can now log in with your new credentials.",
+        )
 
     def _on_unlock_clicked(self) -> None:
         key = self.login_security_key_input.text().strip()

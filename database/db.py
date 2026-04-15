@@ -138,11 +138,13 @@ def _create_engine_instance() -> Engine:
 
     if simulation:
         print(
-            "[DB] SIMULATION_MODE: using real SQLite DB for testing — "
-            f"{db_url}"
+            "[DB] SIMULATION_MODE: using real SQLite DB for testing."
         )
     else:
-        print(f"[DB] Using database: {db_url}")
+        # VULN-011 FIX: Log only the database filename, not the full path.
+        from pathlib import Path as _P
+        _db_name = _P(db_url.replace("sqlite:///", "")).name if "sqlite" in db_url else "database"
+        print(f"[DB] Database ready: {_db_name}")
 
     eng: Engine = create_engine(
         db_url,

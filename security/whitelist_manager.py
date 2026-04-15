@@ -11,6 +11,7 @@ from typing import Any
 from database.db import get_db
 from database.models import AlertCategory, AlertSeverity
 from database.repository import AlertRepository
+from security.session_manager import SessionManager, UserMode
 
 
 @dataclass(slots=True)
@@ -53,6 +54,8 @@ class WhitelistManager:
     ) -> bool:
         """Add a device serial number to whitelist.
 
+        Requires ADMIN session to prevent unauthorized trust escalation.
+
         Parameters
         ----------
         serial_number:
@@ -65,8 +68,12 @@ class WhitelistManager:
         Returns
         -------
         bool
-            True if added, False if already present or invalid.
+            True if added, False if already present, invalid, or unauthorized.
         """
+        if not SessionManager.instance().require_auth(UserMode.ADMIN):
+            print("[WHITELIST] Unauthorized: ADMIN session required to add devices.")
+            return False
+
         normalized = self._normalize_serial(serial_number)
         if not normalized:
             return False
@@ -93,7 +100,14 @@ class WhitelistManager:
             return True
 
     def remove_device(self, serial_number: str, *, removed_by: str | None = None) -> bool:
-        """Remove a device serial number from whitelist."""
+        """Remove a device serial number from whitelist.
+
+        Requires ADMIN session to prevent unauthorized trust modification.
+        """
+        if not SessionManager.instance().require_auth(UserMode.ADMIN):
+            print("[WHITELIST] Unauthorized: ADMIN session required to remove devices.")
+            return False
+
         normalized = self._normalize_serial(serial_number)
         if not normalized:
             return False

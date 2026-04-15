@@ -216,4 +216,5 @@ class HIDDescriptorAnalyzer:
         serial = str(device_info.get("serial_number", ""))
 
         fingerprint = f"{vid}:{pid}:{dev_type}:{manufacturer}:{serial}"
-        return hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:16]
+        # VULN-010 FIX: Use SHA256[:32] (128-bit) for adequate collision resistance.
+        return hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()[:32]

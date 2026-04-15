@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 import sys
 from dataclasses import dataclass
 from enum import Enum
@@ -179,13 +180,49 @@ class LightGBMClassifier:
         }
 
     def _load_model(self, model_path: Path) -> Booster:
-        """Load production model file and fail fast if missing."""
+        """Load production model file with integrity verification.
+
+        VULN-008 FIX: Verify SHA-256 checksum of the model file against a
+        stored manifest to prevent loading tampered/malicious model files.
+        """
         if not model_path.exists():
             raise FileNotFoundError(
                 f"LightGBM model file not found: {model_path}. "
                 "Run 'python ml/train_model.py' to generate ml/models/hid_shield_model.txt."
             )
+
+        # Verify model integrity against stored checksum.
+        checksum_path = model_path.with_suffix(model_path.suffix + ".sha256")
+        actual_hash = self._compute_file_hash(model_path)
+
+        if checksum_path.exists():
+            expected_hash = checksum_path.read_text(encoding="utf-8").strip().split()[0]
+            if actual_hash != expected_hash:
+                raise RuntimeError(
+                    f"Model integrity check FAILED for {model_path.name}. "
+                    f"Expected SHA-256: {expected_hash[:16]}..., "
+                    f"Got: {actual_hash[:16]}... "
+                    "The model file may have been tampered with. "
+                    "Re-run 'python ml/train_model.py' to regenerate."
+                )
+            print(f"[ML] Model integrity verified: {model_path.name}")
+        else:
+            # First load — create the checksum file.
+            checksum_path.write_text(
+                f"{actual_hash}  {model_path.name}\n", encoding="utf-8"
+            )
+            print(f"[ML] Model checksum created: {checksum_path.name}")
+
         return Booster(model_file=str(model_path))
+
+    @staticmethod
+    def _compute_file_hash(file_path: Path) -> str:
+        """Compute SHA-256 hash of a file."""
+        sha256 = hashlib.sha256()
+        with file_path.open("rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                sha256.update(chunk)
+        return sha256.hexdigest()
 
     def _should_use_rule_only_mode(self) -> bool:
         """Return True when native LightGBM should be bypassed for stability."""

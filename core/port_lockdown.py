@@ -24,6 +24,31 @@ import subprocess
 import threading
 from typing import Any
 
+# Strict pattern for Windows PNP device IDs.
+# Allows alphanumeric, backslash, ampersand, underscore, hyphen, braces, hash.
+_SAFE_DEVICE_ID_PATTERN = re.compile(r'^[A-Za-z0-9_\\&{}#.\-]+$')
+_MAX_DEVICE_ID_LENGTH = 512
+
+
+def _sanitize_device_id(device_id: str) -> str:
+    """Validate and sanitize a device ID before passing to OS commands.
+
+    Raises
+    ------
+    ValueError
+        If the device ID contains forbidden characters or exceeds max length.
+    """
+    cleaned = str(device_id or "").strip()
+    if not cleaned:
+        raise ValueError("Device ID must not be empty.")
+    if len(cleaned) > _MAX_DEVICE_ID_LENGTH:
+        raise ValueError(f"Device ID exceeds max length ({_MAX_DEVICE_ID_LENGTH}).")
+    if not _SAFE_DEVICE_ID_PATTERN.match(cleaned):
+        raise ValueError(
+            f"Device ID contains forbidden characters: {cleaned!r}"
+        )
+    return cleaned
+
 
 def _get_simulation_mode() -> bool:
     env_val = os.getenv("HID_SHIELD_SIMULATION_MODE", "").lower()
@@ -86,13 +111,19 @@ class PortLockdown:
             print(f"[LOCKDOWN] SIMULATION: applied '{action}' to device {device_id}")
             return True
 
+        try:
+            safe_id = _sanitize_device_id(device_id)
+        except ValueError as exc:
+            print(f"[LOCKDOWN] Rejected unsafe device ID: {exc}")
+            return False
+
         # Live dispatch
         action_norm = action.lower()
         if action_norm in ("block", "quarantine"):
-            return self._disable_device_live(device_id)
+            return self._disable_device_live(safe_id)
         elif action_norm == "allow":
-            enabled = self._enable_device_live(device_id)
-            mount_restored = self._restore_mount_for_device(device_id)
+            enabled = self._enable_device_live(safe_id)
+            mount_restored = self._restore_mount_for_device(safe_id)
             return bool(enabled or mount_restored)
         
         # PROMPT / MONITOR don't require OS-level interference

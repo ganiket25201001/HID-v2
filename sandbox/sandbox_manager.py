@@ -84,16 +84,20 @@ class SandboxManager:
             # Attempt WMI-based removable-drive discovery before giving up
             root = self._discover_removable_drive()
         if root is None:
-            # Genuine fallback when no USB mount is accessible at all
-            fake_files = list(Path(__file__).parent.glob("*.py"))[:8]
-            if not fake_files:
-                fake_files = [Path(__file__)]
-            return fake_files
+            # VULN-007 FIX: Do NOT scan own source files as fallback.
+            # Return empty list and log a warning instead of exposing
+            # application internals to the analysis pipeline.
+            print("[SANDBOX] WARNING: No USB mount point found. No files to scan.")
+            return []
 
         discovered: list[Path] = []
 
-        def _walk_error(_: OSError) -> None:
+        def _walk_error(err: OSError) -> None:
+            print(f"[SANDBOX] OS Walk error on {root}: {err}")
             return
+
+        import time
+        time.sleep(1.0)  # Volume stabilization delay after mount detach
 
         for walk_root, dirs, files in os.walk(root, onerror=_walk_error):
             dirs[:] = [d for d in sorted(dirs) if d.lower() not in {"$recycle.bin", "system volume information"}]
@@ -121,8 +125,12 @@ class SandboxManager:
         nodes: list[dict[str, Any]] = []
         count = 0
 
-        def _walk_error(_: OSError) -> None:
+        def _walk_error(err: OSError) -> None:
+            print(f"[SANDBOX] UI Tree OS Walk error on {root}: {err}")
             return
+
+        import time
+        time.sleep(1.0)  # Volume stabilization delay
 
         for walk_root, dirs, files in os.walk(root, onerror=_walk_error):
             dirs[:] = [d for d in sorted(dirs) if d.lower() not in {"$recycle.bin", "system volume information"}]
