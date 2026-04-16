@@ -75,6 +75,10 @@ HID-v2/
 │
 ├── ai_agent/                        # Advisory AI integration (Ollama)
 │   ├── __init__.py                  # Package stub
+│   ├── autonomous_agent.py          # Main 7-stage autonomous threat orchestrator
+│   ├── mitre_mapper.py              # MITRE ATT&CK technique mapping
+│   ├── report_generator.py          # JSON, Markdown, and PDF report creation
+│   ├── detection_gap_analyzer.py    # Self-improvement detection gap analysis
 │   ├── config.py                    # AI settings loader/saver
 │   ├── explanation_agent.py         # Async QThread advisory worker
 │   ├── advisory_service.py          # Ollama text/vision model service
@@ -226,6 +230,18 @@ HID-v2/
 - **Security Role:** Advisory only — does not make enforcement decisions.
 - **Issues Found:** `advisory_service.py` sends scan data to local Ollama API — if Ollama is remotely accessible, this is a data exfiltration path.
 
+### 2.21 `ai_agent/autonomous_agent.py` — Autonomous USB Agent
+- **Purpose:** Orchestrates a 7-stage autonomous analysis pipeline upon USB insertion.
+- **Security Role:** Full automated correlation and reporting without Windows Sandbox dependency.
+- **Issues Found:** None (fail-closed zero-trust architecture).
+
+### 2.22 `ai_agent/mitre_mapper.py` — MITRE Correlation
+- **Purpose:** Maps behavioral and heuristic findings to MITRE ATT&CK techniques with optional Ollama enrichment.
+- **Security Role:** Contextualization of threats.
+
+### 2.23 `ai_agent/detection_gap_analyzer.py` — Self-Improvement Analyzer
+- **Purpose:** Audits the current system against known vulnerability catalogs (`website_full_detail.md`) to recommend structural improvements.
+
 ---
 
 ## 3. Dependency Inventory
@@ -285,105 +301,3 @@ HID-v2/
 | **Model Tampering** | 🟡 MEDIUM | No integrity check on ML model files (joblib/pickle) |
 | **Info Disclosure** | 🟢 LOW | Database paths printed to console/logs |
 
----
-
-## 5. Vulnerability Catalogue
-
-### VULN-001: Hardcoded Default Credentials
-- **Severity:** 🔴 CRITICAL (CVSS 9.8)
-- **Location:** `security/auth_manager.py:141-143`
-- **Description:** Default admin credentials (`admin/admin/admin`) are hardcoded and auto-seeded on first run. Combined with the security key unlock in `access_controller.py:159-193`, an attacker knowing the default key `"admin"` can unlock all USB ports.
-- **Impact:** Full USB port bypass; complete security control override.
-- **Remediation:** Force credential change on first run; remove hardcoded defaults; generate random initial security key.
-
-### VULN-002: Session Manager Race Condition
-- **Severity:** 🔴 HIGH (CVSS 7.5)
-- **Location:** `security/session_manager.py:214-239`
-- **Description:** `check_timeout()` reads `elapsed_minutes` inside `with self._lock:` but uses it outside the lock block (line 236). This creates a TOCTOU race condition where concurrent threads could observe inconsistent session state.
-- **Impact:** Session timeout bypass; privilege persistence beyond configured timeout.
-- **Remediation:** Move the timeout comparison and `end_session()` call inside the lock scope.
-
-### VULN-003: Command Injection via Device ID
-- **Severity:** 🟠 HIGH (CVSS 8.1)
-- **Location:** `core/port_lockdown.py:287-288`
-- **Description:** `_devcon_disable()` passes `device_id` directly into a subprocess command list as `f"@{device_id}"`. While Python's list-based `subprocess.run()` provides some protection against shell injection, a maliciously crafted device ID string from a USB device descriptor could still cause unexpected behavior in DevCon argument parsing.
-- **Impact:** Potential command injection or denial of service.
-- **Remediation:** Validate device IDs against a strict regex pattern (`^[A-Za-z0-9_\\\\&]+$`); reject any containing shell metacharacters.
-
-### VULN-004: Simulation Mode Defaults to True
-- **Severity:** 🟠 HIGH (CVSS 7.0)
-- **Location:** `security/auth_manager.py:82`
-- **Description:** The `_is_simulation_mode()` fallback returns `True` when the config key `simulation_mode` is not found. This means if `config.yaml` is missing or corrupted, the auth manager enters simulation mode with pre-seeded development PIN `123456`.
-- **Impact:** Authentication bypass in degraded deployment scenarios.
-- **Remediation:** Default to `False` (production) when config is unavailable.
-
-### VULN-005: No Input Validation on USB Device Fields
-- **Severity:** 🟠 HIGH (CVSS 7.0)
-- **Location:** Multiple (device_info.py, usb_monitor.py, file_scanner.py)
-- **Description:** Vendor ID, Product ID, serial number, and device name fields from USB descriptors are used throughout the application without format validation. Malicious USB devices can set arbitrary strings in these fields.
-- **Impact:** Log injection, display manipulation, potential XSS in reports, command injection in downstream operations.
-- **Remediation:** Validate VID/PID as 4-hex-digit strings; sanitize serial numbers and device names; enforce max lengths.
-
-### VULN-006: Unbounded File Read in Scanner
-- **Severity:** 🟡 MEDIUM (CVSS 5.3)
-- **Location:** `sandbox/file_scanner.py:379`
-- **Description:** `_analyze_single_file()` calls `file_path.read_bytes()` without any size limit. A USB device containing a multi-gigabyte file could exhaust system memory.
-- **Impact:** Denial of service via memory exhaustion.
-- **Remediation:** Enforce a configurable max file size (e.g., 100 MB); skip or stream files exceeding the limit.
-
-### VULN-007: Source Code Exposure in Sandbox Fallback
-- **Severity:** 🟡 MEDIUM (CVSS 5.0)
-- **Location:** `sandbox/sandbox_manager.py:88-91`
-- **Description:** When no USB mount point is detected, `discover_device_files()` falls back to scanning the sandbox package's own Python source files. This exposes application source code to the analysis pipeline and potentially to logs/reports.
-- **Impact:** Information disclosure of application internals.
-- **Remediation:** Return an empty list instead of scanning own source; raise an explicit error.
-
-### VULN-008: ML Model Integrity Not Verified
-- **Severity:** 🟡 MEDIUM (CVSS 6.0)
-- **Location:** `ml/random_forest_classifier.py:131-132`, `ml/lightgbm_classifier.py:188`
-- **Description:** ML model files (`joblib`, LightGBM text format) are loaded without integrity verification. The joblib format uses pickle under the hood, which allows arbitrary code execution if the model file is tampered with.
-- **Impact:** Remote code execution if an attacker can replace model files.
-- **Remediation:** Compute and verify SHA-256 checksums of model files at load time; store expected hashes in a signed manifest.
-
-### VULN-009: No Authorization on Whitelist Operations
-- **Severity:** 🟡 MEDIUM (CVSS 5.5)
-- **Location:** `security/whitelist_manager.py:47-93`
-- **Description:** `add_device()` and `remove_device()` perform no authorization check. Any code path with access to the `WhitelistManager` instance can whitelist arbitrary device serial numbers, bypassing security controls.
-- **Impact:** Unauthorized device trust escalation.
-- **Remediation:** Require `SessionManager.require_auth(UserMode.ADMIN)` before whitelist mutations.
-
-### VULN-010: Truncated Descriptor Hash
-- **Severity:** 🟢 LOW (CVSS 3.0)
-- **Location:** `sandbox/hid_descriptor_analyzer.py:218-219`
-- **Description:** Device descriptor fingerprint uses `sha256(...)[:16]` (8 bytes / 64 bits), which has significantly reduced collision resistance compared to the full hash.
-- **Impact:** Potential fingerprint collision allowing a malicious device to impersonate a known-good device.
-- **Remediation:** Use at minimum SHA256[:32] (128-bit) for device fingerprinting.
-
-### VULN-011: Database Path Information Disclosure
-- **Severity:** 🟢 LOW (CVSS 2.0)
-- **Location:** `database/db.py:142-145`
-- **Description:** Full database file path is printed to stdout during initialization.
-- **Impact:** Information disclosure of filesystem layout.
-- **Remediation:** Use structured logging at DEBUG level only; mask paths in production.
-
----
-
-## 6. Remediation Priority Matrix
-
-| Priority | Vulnerability | Effort | Phase |
-|----------|--------------|--------|-------|
-| **P0** | VULN-001: Hardcoded Default Credentials | Medium | Phase 2 |
-| **P0** | VULN-002: Session Race Condition | Low | Phase 2 |
-| **P0** | VULN-004: Simulation Mode Defaults | Low | Phase 2 |
-| **P1** | VULN-003: Command Injection | Medium | Phase 2 |
-| **P1** | VULN-005: Input Validation | Medium | Phase 2 |
-| **P1** | VULN-008: Model Integrity | Medium | Phase 2 |
-| **P2** | VULN-006: Unbounded File Read | Low | Phase 2 |
-| **P2** | VULN-007: Source Code Exposure | Low | Phase 2 |
-| **P2** | VULN-009: Whitelist Auth | Low | Phase 2 |
-| **P3** | VULN-010: Truncated Hash | Low | Phase 2 |
-| **P3** | VULN-011: Info Disclosure | Low | Phase 2 |
-
----
-
-> **Next Steps:** Proceed to Phase 2 — Security-First Code Fixes, addressing all vulnerabilities in priority order.

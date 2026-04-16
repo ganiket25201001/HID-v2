@@ -58,7 +58,6 @@ class FileScanner(QObject):
 
         self._port_lockdown = PortLockdown()
         self._sandbox_manager = SandboxManager()
-        self._windows_sandbox = WindowsSandboxBridge()
         self._entropy_analyzer = ShannonEntropyAnalyzer()
         self._pe_analyzer = PEHeaderAnalyzer(simulation_mode=self._simulation_mode)
         self._policy_engine = PolicyEngine(simulation_mode=self._simulation_mode)
@@ -91,16 +90,12 @@ class FileScanner(QObject):
     # ------------------------------------------------------------------
 
     def _scan_worker(self, event_id: int, device_dict: dict[str, Any]) -> None:
-        """Execute full sandbox and analysis pipeline in background thread."""
-        session = self._sandbox_manager.create_session()
-        session_id = session.session_id
+        """Execute full local analysis pipeline in background thread."""
+        session_id = f"local_{event_id}_{int(time.time())}"
 
         try:
             source_files = self._sandbox_manager.discover_device_files(device_dict)
-            files = self._sandbox_manager.shadow_copy_files(
-                session_id=session_id,
-                source_files=source_files,
-            )
+            files = source_files  # No longer copying files since Windows Sandbox is removed
 
             if not files:
                 summary = {
@@ -148,8 +143,6 @@ class FileScanner(QObject):
 
             summary = self._build_summary(device_dict=device_dict, rows=all_rows)
             summary["analysis_engine"] = analysis_engine
-            if analysis_engine == "windows_sandbox":
-                summary["summary_note"] = "Windows Sandbox scan finished with isolated analysis pipeline."
             risk_level, action = self._evaluate_device_policy(device_dict=device_dict, rows=all_rows)
             summary["risk_level"] = risk_level
             summary["recommended_action"] = action
@@ -164,8 +157,6 @@ class FileScanner(QObject):
             }
             self._emit_progress(event_id, 100, f"Scan failed for event #{event_id}: {exc}")
             self._finalize_scan(event_id, error_summary, RiskLevel.HIGH.value, PolicyAction.PROMPT.value)
-        finally:
-            self._sandbox_manager.cleanup_session(session_id)
 
     def _run_analysis_pipeline(
         self,
@@ -176,24 +167,7 @@ class FileScanner(QObject):
         source_files: list[Path],
         staged_files: list[Path],
     ) -> tuple[list[dict[str, Any]], str]:
-        """Run sandbox-first analysis and fallback to local analyzers if needed."""
-        sandbox_rows = self._analyze_with_windows_sandbox(
-            event_id=event_id,
-            session_id=session_id,
-            source_files=source_files,
-            staged_files=staged_files,
-            device_dict=device_dict,
-        )
-        if sandbox_rows is not None:
-            return sandbox_rows, "windows_sandbox"
-
-        if self._require_windows_sandbox and self._windows_sandbox.enabled:
-            self._emit_progress(
-                event_id,
-                15,
-                "Windows Sandbox unavailable in strict mode. Blocking access.",
-            )
-            return [], "sandbox_unavailable"
+        """Run standard local heuristic and static analysis."""
 
         all_rows: list[dict[str, Any]] = []
         total_files = len(staged_files)
@@ -223,128 +197,6 @@ class FileScanner(QObject):
 
         return all_rows, "host_local"
 
-    def _analyze_with_windows_sandbox(
-        self,
-        *,
-        event_id: int,
-        session_id: str,
-        source_files: list[Path],
-        staged_files: list[Path],
-        device_dict: dict[str, Any],
-    ) -> list[dict[str, Any]] | None:
-        """Run file analysis inside Windows Sandbox and normalize output rows."""
-        if self._simulation_mode:
-            return None
-        if not self._windows_sandbox.is_available():
-            return None
-
-        self._emit_progress(event_id, 10, "Launching Windows Sandbox for isolated USB analysis...")
-
-        sandbox_output = self._windows_sandbox.analyze_staged_files(
-            session_id=session_id,
-            staged_files=staged_files,
-        )
-        if not sandbox_output:
-            self._emit_progress(
-                event_id,
-                12,
-                "Windows Sandbox result unavailable, falling back to local analyzers.",
-            )
-            return None
-
-        staged_map: dict[str, Path] = {
-            staged.name: source
-            for source, staged in zip(source_files, staged_files)
-        }
-        rows: list[dict[str, Any]] = []
-        total_rows = len(sandbox_output)
-
-        for index, item in enumerate(sandbox_output, start=1):
-            staged_name = str(item.get("sandbox_name") or "").strip()
-            source_path = staged_map.get(staged_name, Path(staged_name or f"sandbox_{index}"))
-
-            row = self._build_row_from_sandbox_result(
-                source_path=source_path,
-                sandbox_row=item,
-                device_dict=device_dict,
-            )
-            self._persist_file_result(event_id=event_id, row=row)
-            rows.append(row)
-            self.file_scanned.emit(row)
-
-            progress = 15 + int((index / max(1, total_rows)) * 80)
-            self._emit_progress(
-                event_id,
-                progress,
-                f"Sandbox analyzed {row['file_name']} ({index}/{total_rows})",
-            )
-
-            if row["risk_level"] in {RiskLevel.HIGH.value, RiskLevel.CRITICAL.value}:
-                event_bus.threat_detected.emit(
-                    {
-                        "device_event_id": event_id,
-                        "file_name": row["file_name"],
-                        "risk_level": row["risk_level"],
-                        "threat_name": row.get("threat_name"),
-                    }
-                )
-
-        return rows
-
-    def _build_row_from_sandbox_result(
-        self,
-        *,
-        source_path: Path,
-        sandbox_row: dict[str, Any],
-        device_dict: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Normalize one Windows Sandbox row into repository/UI output shape."""
-        mime_type, _ = mimetypes.guess_type(str(source_path))
-        mime_type = mime_type or "application/octet-stream"
-
-        entropy = self._safe_float(sandbox_row.get("entropy"), default=0.0)
-        risk_level = str(sandbox_row.get("risk_level", RiskLevel.LOW.value)).strip().lower()
-        if risk_level not in {
-            RiskLevel.SAFE.value,
-            RiskLevel.LOW.value,
-            RiskLevel.MEDIUM.value,
-            RiskLevel.HIGH.value,
-            RiskLevel.CRITICAL.value,
-        }:
-            risk_level = RiskLevel.LOW.value
-
-        file_size = int(self._safe_float(sandbox_row.get("size"), default=0.0))
-        feature_vector = {
-            "size_kb": round(file_size / 1024.0, 3),
-            "entropy": float(entropy),
-            "is_executable": int(source_path.suffix.lower() in {".exe", ".dll", ".scr", ".com", ".sys"}),
-            "suspicious_api_count": 0,
-            "has_autorun": int(source_path.name.lower() == "autorun.inf"),
-            "has_hidden_path": int(any(part.startswith(".") for part in source_path.parts)),
-            "has_script_behavior": int(source_path.suffix.lower() in {".ps1", ".bat", ".cmd", ".vbs", ".js", ".py", ".sh"}),
-            "yara_hits": 0,
-        }
-
-        return {
-            "file_path": str(source_path),
-            "file_name": source_path.name,
-            "size": file_size,
-            "mime_type": mime_type,
-            "sha256": self._optional_str(sandbox_row.get("sha256")),
-            "md5": None,
-            "entropy": float(entropy),
-            "entropy_classification": "sandbox_estimated",
-            "entropy_explanation": "Estimated inside Windows Sandbox script.",
-            "pe": {},
-            "heuristics": {"source": "windows_sandbox"},
-            "is_malicious": risk_level in {RiskLevel.HIGH.value, RiskLevel.CRITICAL.value},
-            "risk_level": risk_level,
-            "threat_name": self._optional_str(sandbox_row.get("threat_name")),
-            "notes": self._optional_str(sandbox_row.get("notes")) or "Windows Sandbox scan result.",
-            "feature_vector": feature_vector,
-            "device_name": device_dict.get("device_name"),
-            "analysis_engine": "windows_sandbox",
-        }
 
     def _enforce_host_isolation(self, device_dict: dict[str, Any]) -> None:
         """Detach drive letter before scanning to reduce host-level exposure."""
@@ -655,6 +507,73 @@ class FileScanner(QObject):
             "max_entropy": round(max_entropy, 4),
             "summary_note": "Sandbox scan finished with full pipeline.",
             "timestamp": int(time.time()),
+        }
+
+    # ------------------------------------------------------------------
+    # Autonomous agent integration
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def extract_scan_data(summary: dict[str, Any]) -> dict[str, Any]:
+        """Extract structured scan data for autonomous agent consumption.
+
+        Parameters
+        ----------
+        summary:
+            The scan summary dict emitted via scan_completed signal.
+
+        Returns
+        -------
+        dict[str, Any]
+            Structured scan data including file list, risk stats,
+            entropy metrics, and heuristic findings.
+        """
+        files = summary.get("files", []) if isinstance(summary.get("files"), list) else []
+        device = summary.get("device", {}) if isinstance(summary.get("device"), dict) else {}
+
+        # Aggregate statistics
+        total = len(files)
+        safe_count = sum(1 for f in files if str(f.get("risk_level", "")).lower() in {"safe", "low"})
+        medium_count = sum(1 for f in files if str(f.get("risk_level", "")).lower() == "medium")
+        high_count = sum(1 for f in files if str(f.get("risk_level", "")).lower() in {"high", "critical"})
+        max_entropy = max((float(f.get("entropy", 0.0)) for f in files), default=0.0)
+
+        # Collect heuristic signals
+        all_yara_hits: list[str] = []
+        autorun_detected = False
+        hidden_files_count = 0
+        script_files_count = 0
+
+        for f in files:
+            heuristics = f.get("heuristics", {}) if isinstance(f.get("heuristics"), dict) else {}
+            yara = heuristics.get("yara_hits", [])
+            if isinstance(yara, list):
+                all_yara_hits.extend(yara)
+            if heuristics.get("autorun_reference"):
+                autorun_detected = True
+            if heuristics.get("hidden_path"):
+                hidden_files_count += 1
+            if heuristics.get("script_like"):
+                script_files_count += 1
+
+        return {
+            "device": device,
+            "files": files,
+            "stats": {
+                "total_files": total,
+                "safe_files": safe_count,
+                "medium_risk_files": medium_count,
+                "high_risk_files": high_count,
+                "max_entropy": round(max_entropy, 4),
+            },
+            "signals": {
+                "autorun_detected": autorun_detected,
+                "hidden_files_count": hidden_files_count,
+                "script_files_count": script_files_count,
+                "yara_hits": list(set(all_yara_hits)),
+            },
+            "analysis_engine": str(summary.get("analysis_engine", "unknown")),
+            "risk_level": str(summary.get("risk_level", "safe")),
         }
 
     # ------------------------------------------------------------------

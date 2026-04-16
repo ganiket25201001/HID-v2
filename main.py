@@ -38,6 +38,7 @@ from database.db import init_db
 from ml.classifier import Classifier
 from sandbox.file_scanner import FileScanner
 from security.access_controller import AccessController
+from ai_agent.autonomous_agent import AutonomousUSBAgent
 from ui.main_window import HIDShieldMainWindow
 from ui.styles.theme import build_stylesheet, load_fonts
 
@@ -115,12 +116,17 @@ def main() -> None:
     # Instantiate ML pipeline (auto-subscribes to scan_completed)
     ml_classifier = Classifier(auto_subscribe=True)
 
+    # Start autonomous threat detection agent
+    autonomous_agent = AutonomousUSBAgent()
+    autonomous_agent.start_monitoring()
+
     access_controller = AccessController()
     access_controller.attach_decision_panel(window.decision_panel)
     window._access_controller = access_controller  # type: ignore[attr-defined]
 
     # Handle graceful shutdown
     app.aboutToQuit.connect(usb_monitor.stop)
+    app.aboutToQuit.connect(autonomous_agent.stop_monitoring)
     
     window.show()
     sys.exit(app.exec())

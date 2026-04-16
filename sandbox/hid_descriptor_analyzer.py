@@ -207,6 +207,60 @@ class HIDDescriptorAnalyzer:
             return True
         return False
 
+    def analyze_for_report(self, device_info: dict[str, Any]) -> dict[str, Any]:
+        """Produce a structured report-ready analysis dict.
+
+        Returns a comprehensive dict suitable for direct inclusion in
+        autonomous agent reports, including classification rationale
+        and all detection parameters.
+
+        Parameters
+        ----------
+        device_info:
+            Device payload dict with keys like device_type, vendor_id, etc.
+
+        Returns
+        -------
+        dict[str, Any]
+            Report-ready analysis including all detection rationale.
+        """
+        result = self.analyze_device(device_info)
+        return {
+            "device_type_classification": result.hid_type,
+            "classification_rationale": (
+                f"Device classified as '{result.hid_type}' based on "
+                f"device name and PNP identifiers."
+            ),
+            "composite_detection": {
+                "is_composite": result.is_composite,
+                "reasoning": (
+                    "Device presents multiple USB interfaces (composite device). "
+                    "This pattern is common in BadUSB attacks where a storage "
+                    "device also registers as a keyboard."
+                ) if result.is_composite else "Device presents a single USB interface.",
+            },
+            "keystroke_analysis": {
+                "rate_kps": result.keystroke_rate,
+                "label": result.keystroke_label,
+                "suspicious_threshold": self.suspicious_kps,
+                "malicious_threshold": self.malicious_kps,
+                "assessment": (
+                    f"Keystroke rate {result.keystroke_rate:.1f} KPS is "
+                    f"classified as {result.keystroke_label}."
+                ),
+            },
+            "descriptor_fingerprint": {
+                "hash": result.descriptor_hash,
+                "algorithm": "SHA-256 (128-bit truncated)",
+            },
+            "anomaly_summary": {
+                "is_anomalous": result.is_anomalous,
+                "total_reasons": len(result.anomaly_reasons),
+                "reasons": list(result.anomaly_reasons),
+                "confidence": result.confidence,
+            },
+        }
+
     def _compute_descriptor_hash(self, device_info: dict[str, Any]) -> str:
         """Compute a deterministic fingerprint hash from device descriptor fields."""
         vid = str(device_info.get("vendor_id", "0000"))

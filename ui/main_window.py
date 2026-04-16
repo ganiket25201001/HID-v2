@@ -17,6 +17,7 @@ from ui.logs_screen import LogsScreen
 from ui.settings_screen import SettingsScreen
 from ui.styles.theme import Theme, build_stylesheet, load_fonts
 from ui.threat_analysis import ThreatAnalysisScreen
+from ui.autonomous_report_screen import AutonomousReportScreen
 from ui.usb_detection import LiveUSBDetectionScreen
 from ui.widgets.animated_button import AnimatedButton
 
@@ -147,8 +148,9 @@ class HIDShieldMainWindow(QMainWindow):
             ("Dashboard", 0),
             ("Live USB", 1),
             ("Threat Analysis", 2),
-            ("Logs & Reports", 3),
-            ("Settings", 4),
+            ("HID Agent", 3),
+            ("Logs & Reports", 4),
+            ("Settings", 5),
         ]
         self.nav_buttons: list[QPushButton] = []
         for text, idx in nav:
@@ -174,12 +176,14 @@ class HIDShieldMainWindow(QMainWindow):
         self.dashboard_screen = DashboardScreen(self)
         self.live_usb_screen = LiveUSBDetectionScreen(parent=self)
         self.threat_analysis_screen = ThreatAnalysisScreen(self)
+        self.autonomous_report_screen = AutonomousReportScreen(self)
         self.logs_screen = LogsScreen(self)
         self.settings_screen = SettingsScreen(self)
 
         self.stack.addWidget(self.dashboard_screen)
         self.stack.addWidget(self.live_usb_screen)
         self.stack.addWidget(self.threat_analysis_screen)
+        self.stack.addWidget(self.autonomous_report_screen)
         self.stack.addWidget(self.logs_screen)
         self.stack.addWidget(self.settings_screen)
 
@@ -194,6 +198,7 @@ class HIDShieldMainWindow(QMainWindow):
         event_bus.usb_device_inserted.connect(lambda _p: self._nav_clicked(1))
         event_bus.scan_completed.connect(self._on_scan_completed)
         event_bus.threat_detected.connect(self._on_threat_detected)
+        event_bus.autonomous_report_ready.connect(self._on_autonomous_report)
         event_bus.logs_refresh_requested.connect(lambda _p: self.logs_screen.refresh_all_tables())
 
     def _on_usb_inserted(self, payload: dict[str, Any]) -> None:
@@ -208,6 +213,13 @@ class HIDShieldMainWindow(QMainWindow):
         self._nav_clicked(2)
         event_bus.dashboard_refresh_requested.emit({"source": "scan_completed", "event_id": event_id})
         event_bus.logs_refresh_requested.emit({"source": "scan_completed", "event_id": event_id})
+
+    def _on_autonomous_report(self, report: dict[str, Any]) -> None:
+        """Navigate to HID Agent tab when autonomous analysis completes."""
+        self._nav_clicked(3)
+        level = str(report.get("final_classification", report.get("classification", {})).get("level", "UNKNOWN"))
+        ToastNotification(self.central_container, f"HID Agent report ready: {level} threat level").show()
+        event_bus.dashboard_refresh_requested.emit({"source": "autonomous_report"})
 
     def _on_threat_detected(self, payload: dict[str, Any]) -> None:
         title = str(payload.get("threat_level") or "THREAT")

@@ -27,6 +27,10 @@ class AppEventBus(QObject):
     ai_explanation_ready = Signal(dict)
 
 
+    # Autonomous agent pipeline
+    autonomous_report_ready = Signal(dict)
+    autonomous_analysis_progress = Signal(int, int, str)  # event_id, progress, stage
+
     # UI sync helpers
     dashboard_refresh_requested = Signal(dict)
     threat_analysis_refresh_requested = Signal(dict)
